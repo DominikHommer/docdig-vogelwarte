@@ -1,6 +1,6 @@
-.env
 Scans/*
 __pycache__/*
+bfg.jar
 table_transformer/__pycache__/
 table_transformer/src/__pycache__/
 table_transformer/detr/__pycache__/
@@ -12,5 +12,28 @@ pubtables1m_structure_detr_r18.pth
 Dataset/__pycache__
 Dataset/Utils/__pycache__
 TableDetector/__pycache__
+Scans_for_Dataset/
+Scans_for_Dataset/*
+Scans_for_Dataset/Dataset
+Scans_for_Dataset/Vogelarten
+Scans_for_Dataset/detected_tables
+Scans_for_Dataset/excel
+Scans_for_Dataset/pngs
+Scans_for_Dataset/rotated_jpgs
+Scans_for_Dataset/rotated_pngs
+Scans_for_Dataset/Dataset.zip
+
 *.pyc
 *.pth
+debug/*
+data/input/*
+data/output/*
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
