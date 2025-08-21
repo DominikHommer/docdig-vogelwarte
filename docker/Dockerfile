@@ -5,17 +5,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
-    software-properties-common \
     git \
     libgl1 \
     tesseract-ocr \
     tesseract-ocr-fra \
     poppler-utils \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --branch dh/streamlit-app-demo https://github.com/DominikHommer/DocDig.git /app
-
+COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY . .
 
 RUN curl -L -o /app/config/pubtables1m_detection_detr_r18.pth "https://huggingface.co/bsmock/tatr-pubtables1m-v1.0/resolve/main/pubtables1m_detection_detr_r18.pth?download=true"
 
