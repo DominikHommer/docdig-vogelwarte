@@ -39,7 +39,7 @@ build:
     - main
     - develop
   tags:
-    - docker
+    - merops
 
 health-check:
   stage: health-check
@@ -59,7 +59,7 @@ health-check:
     - main
     - develop
   tags:
-    - docker
+    - merops
 
 deploy:
   stage: deploy
