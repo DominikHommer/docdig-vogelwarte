@@ -21,7 +21,7 @@ before_script:
 build:
   stage: build
   image: docker:latest
-  timeout: 2h
+  timeout: 2 days
   script:
     # Build the image with cache
     - docker build --cache-from $IMAGE_NAME:latest --build-arg BUILDKIT_INLINE_CACHE=1 -f docker/Dockerfile -t $IMAGE_NAME:$CI_COMMIT_SHA .
