@@ -1,5 +1,4 @@
 stages:
-  # - build
   - health-check
   - deploy
 
