@@ -17,33 +17,33 @@ before_script:
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   - docker pull $IMAGE_NAME:latest || true
 
-build:
-  stage: build
-  image: docker:latest
-  timeout: 2 days
-  script:
-    # Build the image with cache
-    - docker build --cache-from $IMAGE_NAME:latest --build-arg BUILDKIT_INLINE_CACHE=1 -f docker/Dockerfile -t $IMAGE_NAME:$CI_COMMIT_SHA .
-    - docker tag $IMAGE_NAME:$CI_COMMIT_SHA $IMAGE_NAME:$CI_COMMIT_REF_SLUG
-    
-    # Tag as latest if on main branch
-    - |
-      if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
-        docker tag $IMAGE_NAME:$CI_COMMIT_SHA $IMAGE_NAME:latest
-      fi
-    
-    # Push all tags
-    - docker push $IMAGE_NAME:$CI_COMMIT_SHA
-    - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
-    - |
-      if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
-        docker push $IMAGE_NAME:latest
-      fi
-  only:
-    - main
-    - develop
-  tags:
-    - docker
+# build:
+#   stage: build
+#   image: docker:latest
+#   timeout: 2 days
+#   script:
+#     # Build the image with cache
+#     - docker build --cache-from $IMAGE_NAME:latest --build-arg BUILDKIT_INLINE_CACHE=1 -f docker/Dockerfile -t $IMAGE_NAME:$CI_COMMIT_SHA .
+#     - docker tag $IMAGE_NAME:$CI_COMMIT_SHA $IMAGE_NAME:$CI_COMMIT_REF_SLUG
+#     
+#     # Tag as latest if on main branch
+#     - |
+#       if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
+#         docker tag $IMAGE_NAME:$CI_COMMIT_SHA $IMAGE_NAME:latest
+#       fi
+#     
+#     # Push all tags
+#     - docker push $IMAGE_NAME:$CI_COMMIT_SHA
+#     - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
+#     - |
+#       if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
+#         docker push $IMAGE_NAME:latest
+#       fi
+#   only:
+#     - main
+#     - develop
+#   tags:
+#     - docker
 
 health-check:
   stage: health-check
