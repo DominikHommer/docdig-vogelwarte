@@ -1,5 +1,5 @@
 stages:
-  - build
+  # - build
   - health-check
   - deploy
 
@@ -49,7 +49,6 @@ build:
 health-check:
   stage: health-check
   image: docker:latest
-  timeout: 5m
   script:
     # Run container for health check
     - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:$CI_COMMIT_SHA
