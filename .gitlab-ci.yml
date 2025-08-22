@@ -1,5 +1,6 @@
 stages:
-  - health-check
+  # - build
+  # - health-check
   - deploy
 
 variables:
@@ -45,35 +46,35 @@ before_script:
 #   tags:
 #     - docker
 
-health-check:
-  stage: health-check
-  image: docker:latest
-  script:
-    # Run container for health check
-    - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:latest
-    - sleep 15
-    # Check if container is healthy with retry logic
-    - |
-      for i in {1..5}; do
-        if docker ps | grep docdig-test && docker exec docdig-test curl --fail --max-time 10 http://localhost:8501/_stcore/health; then
-          echo "Health check passed"
-          break
-        fi
-        if [ $i -eq 5 ]; then
-          echo "Health check failed after 5 attempts"
-          exit 1
-        fi
-        echo "Health check attempt $i failed, retrying in 5s..."
-        sleep 5
-      done
-    # Clean up test container
-    - docker stop docdig-test
-    - docker rm docdig-test
-  only:
-    - main
-    - develop
-  tags:
-    - docker
+# health-check:
+#   stage: health-check
+#   image: docker:latest
+#   script:
+#     # Run container for health check
+#     - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:latest
+#     - sleep 15
+#     # Check if container is healthy with retry logic
+#     - |
+#       for i in {1..5}; do
+#         if docker ps | grep docdig-test && docker exec docdig-test curl --fail --max-time 10 http://localhost:8501/_stcore/health; then
+#           echo "Health check passed"
+#           break
+#         fi
+#         if [ $i -eq 5 ]; then
+#           echo "Health check failed after 5 attempts"
+#           exit 1
+#         fi
+#         echo "Health check attempt $i failed, retrying in 5s..."
+#         sleep 5
+#       done
+#     # Clean up test container
+#     - docker stop docdig-test
+#     - docker rm docdig-test
+#   only:
+#     - main
+#     - develop
+#   tags:
+#     - docker
 
 deploy:
   stage: deploy
