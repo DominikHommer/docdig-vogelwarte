@@ -17,9 +17,10 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN curl -L -o /app/config/pubtables1m_detection_detr_r18.pth "https://huggingface.co/bsmock/tatr-pubtables1m-v1.0/resolve/main/pubtables1m_detection_detr_r18.pth?download=true"
-
-RUN curl -L -o /app/config/pubtables1m_structure_detr_r18.pth "https://huggingface.co/bsmock/tatr-pubtables1m-v1.0/resolve/main/pubtables1m_structure_detr_r18.pth?download=true"
+RUN mkdir -p /app/config && \
+    curl -L -o /app/config/pubtables1m_detection_detr_r18.pth "https://huggingface.co/bsmock/tatr-pubtables1m-v1.0/resolve/main/pubtables1m_detection_detr_r18.pth?download=true" & \
+    curl -L -o /app/config/pubtables1m_structure_detr_r18.pth "https://huggingface.co/bsmock/tatr-pubtables1m-v1.0/resolve/main/pubtables1m_structure_detr_r18.pth?download=true" & \
+    wait
 
 EXPOSE 8501
 
