@@ -75,7 +75,22 @@ health-check:
   only:
     - main
     - testing
-    - production
+  tags:
+    - docker
+
+promote_to_testing:
+  stage: promote
+  image: docker:latest
+  script:
+    # Pull the latest image from main
+    - docker pull $IMAGE_NAME:latest
+    # Tag it as testing
+    - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
+    # Push testing tag
+    - docker push $IMAGE_NAME:testing
+  only:
+    - testing
+  when: manual
   tags:
     - docker
 
