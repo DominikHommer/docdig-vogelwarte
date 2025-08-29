@@ -75,7 +75,6 @@ health-check:
   only:
     - main
     - testing
-    - production
   tags:
     - docker
 
