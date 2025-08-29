@@ -37,3 +37,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.code-workspace
+
+# MacOS
+.DS_Store
+
+
