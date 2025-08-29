@@ -82,28 +82,8 @@ promote_to_testing:
   stage: promote
   image: docker:latest
   script:
-    # Pull the latest image from main
-    - docker pull $IMAGE_NAME:latest
-    # Tag it as testing
+    # Tag existing image as testing
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
-    # Push testing tag
-    - docker push $IMAGE_NAME:testing
-  only:
-    - testing
-  when: manual
-  tags:
-    - docker
-
-promote_to_testing:
-  stage: promote
-  image: docker:latest
-  script:
-    # Pull the latest image from main
-    - docker pull $IMAGE_NAME:latest
-    # Tag it as testing
-    - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
-    # Push testing tag
-    - docker push $IMAGE_NAME:testing
   only:
     - testing
   when: manual
@@ -114,12 +94,8 @@ promote_to_production:
   stage: promote
   image: docker:latest
   script:
-    # Pull the latest image from main
-    - docker pull $IMAGE_NAME:latest
-    # Tag it as production
+    # Tag existing image as production
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:production
-    # Push production tag
-    - docker push $IMAGE_NAME:production
   only:
     - production
   when: manual
