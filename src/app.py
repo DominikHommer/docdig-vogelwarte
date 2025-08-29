@@ -3,9 +3,10 @@ os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 import streamlit as st
 from PIL import Image
 from functools import partial
+from streamlit_pdf_viewer import pdf_viewer
 
-import random
 import base64
+import itertools
 
 from pipeline.cv_pipeline import CVPipeline
 from modules.pdf_converter import PdfConverter
@@ -44,6 +45,12 @@ st.markdown(
         border-right: 1px solid #e0e0e0;
     }
 
+    .st-key-flex-end-btn > div,
+    .st-key-flex-end-btn-2 > div {
+        display: flex;
+        flex-direction: row-reverse;
+    }
+
     .stPopover {
         margin-top: 10px;
         padding: 0 4px;
@@ -75,6 +82,9 @@ st.markdown(
 def _reset_session_state():
     if "all_pages" in st.session_state:
         del st.session_state["all_pages"]
+    
+    if "pdf_path" in st.session_state:
+        del st.session_state["pdf_path"]
 
     if "page_idx" in st.session_state:
         del st.session_state["page_idx"]
@@ -108,10 +118,11 @@ if not st.session_state.uploaded:
         base_pipeline = CVPipeline(input_data={})
         base_pipeline.add_stage(PdfConverter(debug=False))
         
+        st.session_state.pdf_path = pdf_path
         st.session_state.all_pages = base_pipeline.run(input_data=pdf_path)
         st.session_state.predictions = [None] * len(st.session_state.all_pages)
         st.session_state.page_idx = 0
-        st.session_state.processing = [False] * len(st.session_state.all_pages)
+        st.session_state.processing = False
         st.session_state.uploaded_name = uploaded.name
     
     st.session_state.uploaded = True
@@ -121,28 +132,26 @@ idx = st.session_state.page_idx
 all_pages = st.session_state.all_pages
 page_path = all_pages[idx]
 
-if st.session_state.predictions[idx] is None and not st.session_state.processing[idx]:
+if st.session_state.predictions[idx] is None and not st.session_state.processing:
 
     st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
-    st.image(
-        page_path,
-        caption=f"Original Seite {idx+1}/{len(all_pages)}",
-        use_container_width=True,
-    )
+
+    pdf_viewer(st.session_state.pdf_path, height=600)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button("🔍 Seite verarbeiten", use_container_width=True):
-        st.session_state.processing[idx] = True
+    if st.button("🔍 Seiten verarbeiten", use_container_width=True):
+        st.session_state.processing = True
         st.rerun()
 
-elif st.session_state.processing[idx]:
+elif st.session_state.processing:
 
     st.markdown(
-        "<div style='text-align:center; font-size: 24px;'>⏳ Seite wird verarbeitet...</div>",
+        "<div style='text-align:center; font-size: 24px;'>⏳ Seiten werden verarbeitet...</div>",
         unsafe_allow_html=True,
     )
 
-    page_input = {"pdf-converter": [page_path]}
+    page_input = {"pdf-converter": all_pages}
     page_pipeline = CVPipeline(input_data=page_input)
     page_pipeline.add_stage(TableRotator(debug=False))
     page_pipeline.add_stage(TatrExtractor(debug=False))
@@ -161,8 +170,8 @@ elif st.session_state.processing[idx]:
     result = page_pipeline.run()
     #print(f"ResultsLen: {len(result)}\nResultsLen result['columns'] {len(result['columns'])}")
 
-    st.session_state.predictions[idx] = result
-    st.session_state.processing[idx] = False
+    st.session_state.predictions = result
+    st.session_state.processing = False
     st.rerun()
 
 else:
@@ -174,31 +183,24 @@ else:
 
     columns = pred["columns"]
     cells_only = [col["cells"] for col in columns]
-    rows = list(zip(*cells_only))
+
+    rows = list(itertools.zip_longest(*cells_only, fillvalue={
+        "image": None,
+    }))
 
     st.markdown("## 🧾 Erkannte Zellstruktur")
 
-    # ---- HEADER (row 0) ----
-    header_row = rows[0]
-    with st.container(border=True):
-        header_cols = st.columns(len(header_row), vertical_alignment="center", gap=None)
-        for col_idx, cell in enumerate(header_row):
-            with header_cols[col_idx]:
-                st.markdown('<div class="custom-marker"></div>', unsafe_allow_html=True)
+    left, _, right = st.columns(3, gap='small')
 
-                img_array = cell["image"]
-                if img_array is None:
-                    st.markdown('<span style="color:red">Cell Not Detected</span>', unsafe_allow_html=True)
-                else:
-                    img_uint8 = (
-                        (img_array * 255).astype("uint8")
-                        if img_array.max() <= 1
-                        else img_array.astype("uint8")
-                    )
-                    st.image(Image.fromarray(img_uint8), use_container_width=True)
+    if left.button("⬅️ Vorherige Seite", disabled=(st.session_state.page_idx - 1 < 0)):
+        st.session_state.page_idx -= 1
+        st.rerun()
+    
+    if right.button("➡️ Nächste Seite", disabled=(st.session_state.page_idx + 1 >= len(all_pages)), key="flex-end-btn"):
+        st.session_state.page_idx += 1
+        st.rerun()
 
-    # ---- OTHER ROWS (starting from row 1) ----
-    for row_idx, row in enumerate(rows[1:], start=1):
+    for row_idx, row in enumerate(rows, start=0):
         with st.container(border=True):
 
             # Display Images
@@ -261,7 +263,7 @@ else:
                         cell_key = f"cell-{idx}-{row_idx}-{col_idx}"
                         
                         def on_change(_cell_key, _idx, _col_idx, _row_idx):
-                            st.session_state.predictions[_idx][0]["columns"][_col_idx]["cells"][_row_idx]["erkannt"] = st.session_state[_cell_key]
+                            st.session_state.predictions[_idx]["columns"][_col_idx]["cells"][_row_idx]["erkannt"] = st.session_state[_cell_key]
                             #st.rerun()
 
                         st.text_input(
@@ -287,70 +289,74 @@ else:
                     #    on_change=partial(on_change, cell_key, idx, col_idx, row_idx),
                     #)
 
-    if st.session_state.page_idx + 1 < len(all_pages):
-        if st.button("➡️ Nächste Seite"):
-            st.session_state.page_idx += 1
-            st.rerun()
-    else:
-        if st.button("Finalisieren und Download"):
-            # FIXME: Move to dedicated module...
-            import csv
+    left, _, right = st.columns(3, gap='small')
 
-            output_dir = os.path.join("data", "output")
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"{st.session_state.uploaded_name}_predictions.csv")
+    if right.button("Finalisieren und Download", key="flex-end-btn-2"):
+        # FIXME: Move to dedicated module...
+        import csv
 
-            with open(output_path, "w", newline="") as csvfile:
-                writer = csv.writer(csvfile)
+        output_dir = os.path.join("data", "output")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{st.session_state.uploaded_name}_predictions.csv")
 
-                for idx in range(len(st.session_state.predictions)):
-                    page_data = st.session_state.predictions[idx][0]["columns"]
-                    num_rows = len(page_data[0]["cells"])
+        with open(output_path, "w", newline="") as csvfile:
+            writer = csv.writer(csvfile)
 
-                    if idx == 0:
-                        row = []
-                        for col in page_data:
-                            if col["is_batch_column"]:
-                                row.append("Batch")
-                            elif col["is_species_column"]:
-                                row.append("Species")
-                            elif col["is_sexe_column"]:
-                                row.append("Sexe")
-                            elif col["is_age_column"]:
-                                row.append("Age")
-                            elif col["is_jour-mois_column"]:
-                                row.append("Jour-Mois")
-                            elif col["is_heure_column"]:
-                                row.append("Heure")
-                            elif col["is_alle_column"]:
-                                row.append("Alle")
-                            elif col["is_poids_column"]:
-                                row.append("Poids")
-                            else:
-                                row.append("Unknown")
+            for idx in range(len(st.session_state.predictions)):
+                columns = st.session_state.predictions[idx]["columns"]
+                cells_only = [col["cells"] for col in columns]
 
-                        writer.writerow(row)
-                        writer.writerow([])
+                rows = list(itertools.zip_longest(*cells_only, fillvalue={
+                    "erkannt": "-",
+                }))
 
-                    
-                    writer.writerow([f"Page {idx + 1}"])
+                num_rows = len(rows)
 
-                    for row_idx in range(1, num_rows):
-                        row = [
-                            page_data[col_idx]["cells"][row_idx]["erkannt"]
-                            for col_idx in range(len(page_data))
-                        ]
-                        writer.writerow(row)
+                #if idx == 0:
+                #    first_row = rows[0]
+                #    row = []
+                #    for col in columns:
+                #        if col["is_batch_column"]:
+                #            row.append("Batch")
+                #        elif col["is_species_column"]:
+                #            row.append("Species")
+                #        elif col["is_sexe_column"]:
+                #            row.append("Sexe")
+                #        elif col["is_age_column"]:
+                #            row.append("Age")
+                #        elif col["is_jour-mois_column"]:
+                #            row.append("Jour-Mois")
+                #        elif col["is_heure_column"]:
+                #            row.append("Heure")
+                #        elif col["is_alle_column"]:
+                #            row.append("Alle")
+                #        elif col["is_poids_column"]:
+                #            row.append("Poids")
+                #        else:
+                #            row.append("Unknown")
+                #
+                #    writer.writerow(row)
+                #    writer.writerow([])
 
-                    writer.writerow([])
+                
+                writer.writerow([f"Page {idx + 1}"])
 
-            st.markdown(
-                f'<a href="data:file/csv;base64,{base64.b64encode(open(output_path, "rb").read()).decode()}" download="{st.session_state.uploaded_name}_predictions.csv">Download Predictions</a>',
-                unsafe_allow_html=True,
-            )
+                for _row in rows:
+                    row = []
+                    for col_idx, cell in enumerate(_row):
+                        row.append(cell["erkannt"])
+
+                    writer.writerow(row)
+
+                writer.writerow([])
+
+        st.markdown(
+            f'<a href="data:file/csv;base64,{base64.b64encode(open(output_path, "rb").read()).decode()}" download="{st.session_state.uploaded_name}_predictions.csv">Download Predictions</a>',
+            unsafe_allow_html=True,
+        )
+    
+    if left.button("Zurücksetzen", type="primary"):
+        _reset_session_state()
+        st.session_state.uploaded = False
         
-        if st.button("Zurücksetzen", type="primary"):
-            _reset_session_state()
-            st.session_state.uploaded = False
-            
-            st.rerun()
+        st.rerun()
