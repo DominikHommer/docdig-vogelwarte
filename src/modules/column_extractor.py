@@ -184,9 +184,6 @@ class ColumnExtractor(Module):
             for splits in xSplits:
                 start, end = splits
 
-                if start == 0:
-                    continue
-
                 if end - start <= self.xThres:
                     continue
 

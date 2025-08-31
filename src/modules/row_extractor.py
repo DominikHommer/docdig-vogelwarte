@@ -43,6 +43,7 @@ class RowExtractor(Module):
             for col_nr, col in enumerate(page['columns_gray']):
                 copyTest = np.copy(col)
                 copyRGB = np.copy(col)
+                copyRGB = cv2.cvtColor(copyRGB, cv2.COLOR_GRAY2RGB)
 
                 if len(copyTest.shape) < 2:
                     page_data['columns'][col_nr] = []
@@ -115,6 +116,7 @@ class RowExtractor(Module):
                 minFoundLines = 1
                 if iWidth < 200:
                     minFoundLines = 0
+                    yThres = 30
 
                 ySplits = [[0, 0]]
 
@@ -123,6 +125,10 @@ class RowExtractor(Module):
                 for i in range(len(horizontalLines)):
                     hLine = horizontalLines[i]
                     x1, y1, x2, y2 = hLine[0]
+
+                    # Skip value, as it is not a horizontal line
+                    if not ((y1 + yThres) > y2 and (y1 - yThres) < y2):
+                        continue
 
                     # This basically gets the maximum (possible) height of the row
                     start, end = getYStartEndForLine(i, horizontalLines)
@@ -139,6 +145,8 @@ class RowExtractor(Module):
                 realSplits = []
                 heights = []
 
+                # FIXME: We "know" currently that cells have to be > 30px
+                yThres = 30
                 for splits in ySplits:
                     start, end = splits
 
@@ -153,11 +161,10 @@ class RowExtractor(Module):
 
                 heightMedian = statistics.median(heights)
                 
-                for splits in ySplits:
-                    start, end = splits
+                start = ySplits[0][0]
 
-                    if start == 0:
-                        continue
+                for splits in ySplits:
+                    _, end = splits
 
                     height = end - start
                     if height <= yThres:
@@ -172,18 +179,14 @@ class RowExtractor(Module):
                             start = newEnd
                             height = end - start
                     
-                        realSplits.append([start, end])
-                    else:
-                        realSplits.append(splits)
+                    realSplits.append([start, end])
+                    start = end
 
                 ySplits = realSplits
 
                 doneRowSplits = []
                 for splits in ySplits:
                     start, end = splits
-
-                    if start == 0:
-                        continue
 
                     if end - start <= yThres:
                         continue
