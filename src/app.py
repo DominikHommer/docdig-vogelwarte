@@ -1,9 +1,13 @@
 import os
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 import streamlit as st
+import pandas as pd
+
 from PIL import Image
 from functools import partial
 from streamlit_pdf_viewer import pdf_viewer
+from streamlit_float import *
+float_init()
 
 import base64
 import itertools
@@ -51,6 +55,20 @@ st.markdown(
         flex-direction: row-reverse;
     }
 
+    .st-key-center-btn button {
+        margin: auto;
+        display: block;
+    }
+
+    .stDialog div[role="dialog"] {
+        width: calc(1060px + 1rem);
+    }
+
+    .st-key-floating-footer .stColumn {
+        width: calc(33.3333% - 4rem);
+        flex: 0 0 auto;
+    }
+
     .stPopover {
         margin-top: 10px;
         padding: 0 4px;
@@ -78,6 +96,42 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+@st.dialog("Mit Original vergleichen", width="large")
+def compare():
+    col1, col2 = st.columns(2)
+
+    with col1:
+        all_pages = st.session_state.all_pages
+        page_path = all_pages[idx]
+
+        st.image(
+            page_path,
+            use_container_width=True,
+        )
+
+    with col2:
+        columns = st.session_state.predictions[st.session_state.page_idx]["columns"]
+        cells_only = [col["cells"] for col in columns]
+
+        rows = list(itertools.zip_longest(*cells_only, fillvalue={
+            "erkannt": "-",
+        }))
+
+        rows = [[cell["erkannt"] for cell in row] for row in rows]
+
+        header, *values = rows
+
+        clean_header = []
+        for i, h in enumerate(header):
+            if not h or h.strip() == "-":
+                clean_header.append(f"col_{i}")
+            else:
+                clean_header.append(h)
+
+        df = pd.DataFrame(values, columns=clean_header)
+
+        st.dataframe(df, height=800)
 
 def _reset_session_state():
     if "all_pages" in st.session_state:
@@ -190,15 +244,22 @@ else:
 
     st.markdown("## 🧾 Erkannte Zellstruktur")
 
-    left, _, right = st.columns(3, gap='small')
+    footer_container = st.container(key="floating-footer")
+    with footer_container:
+        left, middle, right = st.columns(3, gap='small')
 
-    if left.button("⬅️ Vorherige Seite", disabled=(st.session_state.page_idx - 1 < 0)):
-        st.session_state.page_idx -= 1
-        st.rerun()
-    
-    if right.button("➡️ Nächste Seite", disabled=(st.session_state.page_idx + 1 >= len(all_pages)), key="flex-end-btn"):
-        st.session_state.page_idx += 1
-        st.rerun()
+        if left.button("⬅️ Vorherige Seite", disabled=(st.session_state.page_idx - 1 < 0)):
+            st.session_state.page_idx -= 1
+            st.rerun()
+
+        if middle.button("Vergleichen mit Original", key="center-btn"):
+            compare()
+        
+        if right.button("➡️ Nächste Seite", disabled=(st.session_state.page_idx + 1 >= len(all_pages)), key="flex-end-btn"):
+            st.session_state.page_idx += 1
+            st.rerun()
+
+    footer_container.float("bottom: 0; background-color: white; right: 5rem; left: 5rem; padding: 0.5rem;")
 
     for row_idx, row in enumerate(rows, start=0):
         with st.container(border=True):
