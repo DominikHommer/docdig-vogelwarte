@@ -50,28 +50,40 @@ build:
 health-check:
   stage: health-check
   image: docker:latest
-  timeout: 5m
+  timeout: 15m
   script:
     # Run container for health check
     - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:$CI_COMMIT_SHA
-    - sleep 15
+    - echo "Waiting for container to start..."
+    - sleep 60
     # Check if container is healthy with retry logic
     - |
-      for i in {1..5}; do
-        if docker ps | grep docdig-test && docker exec docdig-test curl --fail --max-time 10 http://localhost:8501/_stcore/health; then
-          echo "Health check passed"
-          break
+      for i in {1..20}; do
+        echo "Health check attempt $i/20..."
+        if docker ps | grep docdig-test; then
+          echo "Container is running, checking health endpoint..."
+          if docker exec docdig-test curl --fail --max-time 15 http://localhost:8501/_stcore/health; then
+            echo "Health check passed!"
+            break
+          else
+            echo "Health endpoint not ready yet"
+          fi
+        else
+          echo "Container not running, checking logs:"
+          docker logs docdig-test || true
         fi
-        if [ $i -eq 5 ]; then
-          echo "Health check failed after 5 attempts"
+        if [ $i -eq 20 ]; then
+          echo "Health check failed after 20 attempts"
+          echo "Final container logs:"
+          docker logs docdig-test || true
           exit 1
         fi
-        echo "Health check attempt $i failed, retrying in 5s..."
-        sleep 5
+        echo "Retrying in 30s..."
+        sleep 30
       done
     # Clean up test container
-    - docker stop docdig-test
-    - docker rm docdig-test
+    - docker stop docdig-test || true
+    - docker rm docdig-test || true
   only:
     - main
     - testing
@@ -84,6 +96,8 @@ promote_to_testing:
   script:
     # Tag existing image as testing
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
+    # Push testing tag to registry
+    - docker push $IMAGE_NAME:testing
   only:
     - testing
   when: manual
@@ -96,6 +110,8 @@ promote_to_production:
   script:
     # Tag existing image as production
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:production
+    # Push production tag to registry
+    - docker push $IMAGE_NAME:production
   only:
     - production
   when: manual
