@@ -26,6 +26,43 @@ class TrOCR(Module):
     def get_preconditions(self) -> List[str]:
         return ['quotationmark-detector', 'cell-formatter']
 
+    def _to_rgb(self, image):
+        if image is None:
+            return None
+        img = np.asarray(image)
+        if img.size == 0:
+            return None
+
+        img = np.nan_to_num(img, nan=255.0, posinf=255.0, neginf=0.0)
+
+        if img.ndim == 2:
+            # Graustufe -> RGB
+            if img.dtype != np.uint8:
+                mx = float(img.max()) if img.size else 1.0
+                mn = float(img.min()) if img.size else 0.0
+                if 0.0 <= mn and mx <= 1.0:
+                    img = (img * 255.0).astype(np.uint8)
+                else:
+                    img = np.clip(img, 0, 255).astype(np.uint8)
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
+        if img.ndim == 3:
+            # RGBA -> RGB
+            if img.shape[-1] == 4:
+                img = img[:, :, :3]
+            # Datentyp normalisieren
+            if img.dtype != np.uint8:
+                mx = float(img.max()) if img.size else 1.0
+                mn = float(img.min()) if img.size else 0.0
+                if 0.0 <= mn and mx <= 1.0:
+                    img = (img * 255.0).astype(np.uint8)
+                else:
+                    img = np.clip(img, 0, 255).astype(np.uint8)
+            return img
+
+        # Unsupported shape
+        return None
+
     def process(self, data: dict, config: dict) -> List[Dict]:
         valid_keys = self.get_preconditions()
         input_key = next((k for k in valid_keys if k in data), None)
@@ -35,21 +72,29 @@ class TrOCR(Module):
         pages = data[input_key]
         if isinstance(pages, dict):
             pages = [pages]
+        if not isinstance(pages, list):
+            return []
 
         output = []
 
         for page_idx, page in enumerate(pages):
             processed_page = {"columns": []}
 
-            for col_idx, column in enumerate(page["columns"]):
-                cells = column["cells"]
+            columns = page.get("columns", [])
+            if not isinstance(columns, list):
+                columns = []
+
+            for col_idx, column in enumerate(columns):
+                cells = column.get("cells", [])
                 processed_column = []
 
                 # Speichere Beispielbild für Debug-Zwecke
                 if cells and isinstance(cells[0], dict) and "image" in cells[0] and cells[0]["image"] is not None:
                     if self.debug:
-                        debug_path = os.path.join(self.debug_folder, f"test_png_{col_idx}.png")
-                        cv2.imwrite(debug_path, cells[0]["image"])
+                        debug_img = self._to_rgb(cells[0]["image"])
+                        if debug_img is not None:
+                            debug_path = os.path.join(self.debug_folder, f"test_png_{col_idx}.png")
+                            cv2.imwrite(debug_path, debug_img)
 
                 if not (col_idx == 1 or col_idx == 3 or col_idx == 4 or col_idx == 5):
                     print(f"Skipping OCR for column {col_idx}.")
@@ -62,16 +107,20 @@ class TrOCR(Module):
                         processed_column.append(cell)
                         continue
 
-                    if cell["skip_ocr"]:
+                    if cell.get("skip_ocr", False):
                         processed_column.append(cell)
                         print("OCR skipped due to quotationmark")
                     else:
-                        image = cell["image"]
-                        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-                        pil_image = Image.fromarray(image).convert("RGB")
+                        image = cell.get("image")
+                        rgb = self._to_rgb(image)
+                        if rgb is None:
+                            processed_column.append(cell)
+                            continue
 
-                        #print(f"Image dtype: {image.dtype}, min: {image.min()}, max: {image.max()}")
-                        #cv2.imshow("Quotation Mark Candidate", image)
+                        pil_image = Image.fromarray(rgb).convert("RGB")
+
+                        #print(f"Image dtype: {rgb.dtype}, min: {rgb.min()}, max: {rgb.max()}")
+                        #cv2.imshow("Quotation Mark Candidate", rgb)
                         #cv2.waitKey(0)
                         #cv2.destroyAllWindows()
 
@@ -87,7 +136,7 @@ class TrOCR(Module):
                         print(f"Text erkannt: {text}")
 
                 processed_page["columns"].append({
-                    "cells": processed_column,
+                    "cells": processed_column if processed_column else cells,
                     "is_batch_column": column.get("is_batch_column", False),
                     "is_species_column": column.get("is_species_column", False),
                     "is_sexe_column": column.get("is_sexe_column", False),
@@ -102,4 +151,3 @@ class TrOCR(Module):
 
         print("\nOCR finished!\n")
         return output
-
