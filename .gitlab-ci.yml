@@ -54,7 +54,7 @@ health-check:
   script:
     # Run container for health check
     - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:$CI_COMMIT_SHA
-    - sleep 15
+    - sleep 30
     # Check if container is healthy with retry logic
     - |
       for i in {1..5}; do
