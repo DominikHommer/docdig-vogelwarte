@@ -212,7 +212,8 @@ elif st.session_state.processing:
     page_pipeline.add_stage(ColumnExtractor(debug=False))
     page_pipeline.add_stage(RowExtractor(debug=False))
     page_pipeline.add_stage(DetectColumns())
-    page_pipeline.add_stage(ReorderColumns())
+    # Temporary deactivated since it works very incorrectly
+    #page_pipeline.add_stage(ReorderColumns())
     page_pipeline.add_stage(CellDenoiser(debug=False))
 
     page_pipeline.add_stage(CellFormatter())
