@@ -34,10 +34,10 @@ class CellDenoiser(Module):
             os.makedirs(self.debug_folder, exist_ok=True)
 
     def get_preconditions(self) -> list[str]:
-        return ['column-reorderer']
+        return ['column-reorderer', 'column-marker']
     
     def process(self, data: dict, config: dict) -> list:
-        pages: list = data.get('column-reorderer')
+        pages: list = data.get('column-reorderer', data.get('column-marker', []))
 
         model = load_model(config["denoise"]["model"], custom_objects={"weighted_mse": weighted_mse})
     
