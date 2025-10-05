@@ -4,6 +4,7 @@ import numpy as np
 import shutil
 import math
 import statistics
+from typing import List, Tuple
 
 from libs.cv_helpers import getYStartEndForLine
 from .module_base import Module
@@ -13,14 +14,24 @@ class RowExtractorResult:
 
 class RowExtractor(Module):
     def __init__(self,
+                 useFastLine: bool = False,  # Verwende FastLineDetector statt HoughLinesP
                  debug: bool = False,
                  debug_folder: str = "debug/debug_row_extractor/"):
         super().__init__("row-extractor") 
         self.debug = debug
         self.debug_folder = debug_folder
+        self.useFastLine = useFastLine
 
         self.xThres = 40
         self.minFoundLines = 2
+        
+        # FastLineDetector Parameter
+        if self.useFastLine:
+            self.fld_distance_threshold = 1.414213562
+            self.fld_canny_th1 = 30.0
+            self.fld_canny_th2 = 30.0
+            self.fld_canny_aperture_size = 3
+            self.fld_do_merge = False
 
         if self.debug:
             if os.path.exists(self.debug_folder):
@@ -29,10 +40,42 @@ class RowExtractor(Module):
             os.makedirs(self.debug_folder, exist_ok=True)
 
     def get_preconditions(self) -> list[str]:
-        return ['column-extractor']
+        return ['column-extractor', 'merged-column-extractor']
+    
+    def _detect_horizontal_lines_fld(self, img: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """
+        Verwendet FastLineDetector um horizontale Linien zu erkennen
+        """
+        _, width = img.shape[:2]
+        length_threshold = int(width * 0.5)
+
+        fld = cv2.ximgproc.createFastLineDetector(
+            length_threshold=length_threshold,
+            distance_threshold=self.fld_distance_threshold,
+            canny_th1=self.fld_canny_th1,
+            canny_th2=self.fld_canny_th2,
+            canny_aperture_size=self.fld_canny_aperture_size,
+            do_merge=self.fld_do_merge
+        )
+        
+        lines = fld.detect(img)
+        
+        if lines is None:
+            return []
+        
+        horizontal_lines = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            
+            angle = np.abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+            
+            if angle <= 10 or 190 >= angle >= 170:
+                horizontal_lines.append((int(x1), int(y1), int(x2), int(y2)))
+        
+        return horizontal_lines
 
     def process(self, data: dict, config: dict) -> list[str]:
-        pages: list = data['column-extractor']
+        pages: list = data.get('column-extractor', data.get('merged-column-extractor', []))
 
         results = []
         for page_i, page in enumerate(pages):
@@ -65,53 +108,83 @@ class RowExtractor(Module):
                 colBlur = cv2.GaussianBlur(copyTest, (iWidth, 3), 0)
                 colBlur = cv2.GaussianBlur(copyTest, (iWidth, 1), 0)
 
-                colDenoised = cv2.fastNlMeansDenoising(colBlur, None, 30)
-                colCanny = cv2.Canny(colDenoised, 10, 200)
-
-                houghThreshold = 100
-                minLineLength = 35
-
-                # Small cells should have "smaller" thresholds to detect lines
-                if iWidth < 200:
-                    houghThreshold = 50
-                    minLineLength = 10
-
-                lines = cv2.HoughLinesP(colCanny, 1, np.pi / 180, threshold=houghThreshold, minLineLength=minLineLength, maxLineGap=2)
-
-                # Skip image if no horizontal lines found
-                if lines is None:
-                    page_data['columns'][col_nr] = []
-
-                    continue
-
                 # We define a 30px y-Threshold, which "decides" if a line is indeed a horizontal detected line
                 yThres = 30
                 horizontalLines = []
-                for line in lines:
-                    x1, y1, x2, y2 = line[0]
 
-                    # Skip value, as it is not a horizontal line
-                    if not ((y1 + yThres) > y2 and (y1 - yThres) < y2):
+                if self.useFastLine:
+                    # Verwende FastLineDetector
+                    detected_lines = self._detect_horizontal_lines_fld(colBlur)
+                    
+                    if not detected_lines:
+                        page_data['columns'][col_nr] = []
+                        continue
+                    
+                    # Konvertiere zu kompatiblem Format mit Count
+                    for line in detected_lines:
+                        x1, y1, x2, y2 = line
+                        
+                        shouldAdd = True
+                        for i in range(len(horizontalLines)):
+                            hLine = horizontalLines[i]
+                            h_x1, h_y1, h_x2, h_y2 = hLine[0]
+                            
+                            # Check if "line" Vector is above / under "hLine" Vector and in its y-threshold
+                            if (x1 < h_x1) and ((h_y1 + yThres) > y1 and (h_y1 - yThres) < y1):
+                                horizontalLines[i] = [[x1, y1, h_x2, h_y2], hLine[1]+1]
+                                shouldAdd = False
+                            elif (x2 > h_x2) and ((h_y2 + yThres) > y2 and (h_y2 - yThres) < y2):
+                                horizontalLines[i] = [[h_x1, h_y1, x2, y2], hLine[1]+1]
+                                shouldAdd = False
+                        
+                        if shouldAdd:
+                            horizontalLines.append([[x1, y1, x2, y2], 0])
+                
+                else:
+                    # Verwende HoughLinesP (alter Algorithmus)
+                    colDenoised = cv2.fastNlMeansDenoising(colBlur, None, 30)
+                    colCanny = cv2.Canny(colDenoised, 10, 200)
+
+                    houghThreshold = 100
+                    minLineLength = 35
+
+                    # Small cells should have "smaller" thresholds to detect lines
+                    if iWidth < 200:
+                        houghThreshold = 50
+                        minLineLength = 10
+
+                    lines = cv2.HoughLinesP(colCanny, 1, np.pi / 180, threshold=houghThreshold, minLineLength=minLineLength, maxLineGap=2)
+
+                    # Skip image if no horizontal lines found
+                    if lines is None:
+                        page_data['columns'][col_nr] = []
                         continue
 
-                    shouldAdd = True
-                    for i in range(len(horizontalLines)):
-                        hLine = horizontalLines[i]
-                        h_x1, h_y1, h_x2, h_y2 = hLine[0]
+                    for line in lines:
+                        x1, y1, x2, y2 = line[0]
 
-                        # Check if "line" Vector is above / under "hLine" Vector and in its y-threshold
-                        # Update horizontalLines List accordingly
-                        if (x1 < h_x1) and ((h_y1 + yThres) > y1 and (h_y1 - yThres) < y1):
-                            horizontalLines[i] = [[x1, y1, h_x2, h_y2], hLine[1]+1]
+                        # Skip value, as it is not a horizontal line
+                        if not ((y1 + yThres) > y2 and (y1 - yThres) < y2):
+                            continue
 
-                            shouldAdd = False
-                        elif (x2 > h_x2) and ((h_y2 + yThres) > y2 and (h_y2 - yThres) < y2):
-                            horizontalLines[i] = [[h_x1, h_y1, x2, y2], hLine[1]+1]
+                        shouldAdd = True
+                        for i in range(len(horizontalLines)):
+                            hLine = horizontalLines[i]
+                            h_x1, h_y1, h_x2, h_y2 = hLine[0]
 
-                            shouldAdd = False
+                            # Check if "line" Vector is above / under "hLine" Vector and in its y-threshold
+                            # Update horizontalLines List accordingly
+                            if (x1 < h_x1) and ((h_y1 + yThres) > y1 and (h_y1 - yThres) < y1):
+                                horizontalLines[i] = [[x1, y1, h_x2, h_y2], hLine[1]+1]
 
-                    if shouldAdd == True:
-                        horizontalLines.append([line[0], 0])
+                                shouldAdd = False
+                            elif (x2 > h_x2) and ((h_y2 + yThres) > y2 and (h_y2 - yThres) < y2):
+                                horizontalLines[i] = [[h_x1, h_y1, x2, y2], hLine[1]+1]
+
+                                shouldAdd = False
+
+                        if shouldAdd == True:
+                            horizontalLines.append([line[0], 0])
 
                 minFoundLines = 1
                 if iWidth < 200:
@@ -202,4 +275,3 @@ class RowExtractor(Module):
             results.append(page_data)
 
         return results
-
