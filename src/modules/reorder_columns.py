@@ -141,9 +141,9 @@ class ReorderColumns(Module):
                     reordered.append(placeholder)
 
             extras = [col for col in columns if self._get_column_role(col) is None]
-            reordered.extend(extras)
+            #reordered.extend(extras)
 
-            output.append({"columns": reordered})
+            output.append({"columns": columns})
 
         print("\nColumns Reordered!\n")
         return output

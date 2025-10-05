@@ -17,6 +17,7 @@ from modules.pdf_converter import PdfConverter
 from modules.tatr_extraction import TatrExtractor
 from modules.table_rotator import TableRotator
 from modules.column_extractor import ColumnExtractor
+from modules.merged_column_extractor import MergedColumnExtractor
 from modules.row_extractor import RowExtractor
 from modules.detect_columns import DetectColumns
 from modules.reorder_columns import ReorderColumns
@@ -209,10 +210,14 @@ elif st.session_state.processing:
     page_pipeline = CVPipeline(input_data=page_input)
     page_pipeline.add_stage(TableRotator(debug=False))
     page_pipeline.add_stage(TatrExtractor(debug=False))
-    page_pipeline.add_stage(ColumnExtractor(debug=False))
+    page_pipeline.add_stage(MergedColumnExtractor(debug=False))
     page_pipeline.add_stage(RowExtractor(debug=False))
     page_pipeline.add_stage(DetectColumns())
     # Temporary deactivated since it works very incorrectly
+    # It should:
+    # - Not add columns, thats not part of a reordering
+    # - Reordering itself is pretty weird to do since the columns get process in a left -> right matter
+    # 
     #page_pipeline.add_stage(ReorderColumns())
     page_pipeline.add_stage(CellDenoiser(debug=False))
 
