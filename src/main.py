@@ -6,6 +6,7 @@ from modules.tatr_extraction import TatrExtractor
 from modules.table_rotator import TableRotator
 from modules.column_extractor import ColumnExtractor
 from modules.merged_column_extractor import MergedColumnExtractor
+from modules.merged_row_extractor import MergedRowExtractor
 from modules.row_extractor import RowExtractor
 from modules.cell_denoiser import CellDenoiser
 from modules.cell_formatter import CellFormatter
@@ -35,10 +36,10 @@ pipeline.add_stage(PdfConverter(debug=False))
 pipeline.add_stage(TableRotator(debug=False))
 pipeline.add_stage(TatrExtractor(debug=False))
 pipeline.add_stage(MergedColumnExtractor(debug=True))
-pipeline.add_stage(RowExtractor(debug=True, useFastLine=False))
-#pipeline.add_stage(DetectColumns(debug=True))
+pipeline.add_stage(MergedRowExtractor(debug=True))
+pipeline.add_stage(DetectColumns(debug=True))
 #pipeline.add_stage(ReorderColumns())
-#pipeline.add_stage(CellDenoiser(debug=True))
+pipeline.add_stage(CellDenoiser(debug=True))
 #pipeline.add_stage(CellFormatter())
 #pipeline.add_stage(QuotationMarkDetector())
 #pipeline.add_stage(TrOCR())
