@@ -19,6 +19,7 @@ from modules.table_rotator import TableRotator
 from modules.column_extractor import ColumnExtractor
 from modules.merged_column_extractor import MergedColumnExtractor
 from modules.row_extractor import RowExtractor
+from modules.merged_row_extractor import MergedRowExtractor
 from modules.detect_columns import DetectColumns
 from modules.reorder_columns import ReorderColumns
 from modules.cell_denoiser import CellDenoiser
@@ -211,7 +212,7 @@ elif st.session_state.processing:
     page_pipeline.add_stage(TableRotator(debug=False))
     page_pipeline.add_stage(TatrExtractor(debug=False))
     page_pipeline.add_stage(MergedColumnExtractor(debug=False))
-    page_pipeline.add_stage(RowExtractor(debug=False))
+    page_pipeline.add_stage(MergedRowExtractor(debug=False))
     page_pipeline.add_stage(DetectColumns())
     # Temporary deactivated since it works very incorrectly
     # It should:
