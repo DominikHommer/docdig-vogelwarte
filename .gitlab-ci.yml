@@ -146,9 +146,14 @@ deploy_testing:
         # Stop and remove existing testing container
         docker stop docdig-testing || true
         docker rm docdig-testing || true
-        
+
+        # HTR-VT checkpoint lives on the host (408 MB, not in git/image).
+        # Put best_WER.pth AND alphabet.json into /opt/docdig/htr_vt — with
+        # the directory empty, the app runs and Espece falls back to TrOCR.
+        mkdir -p /opt/docdig/htr_vt
+
         # Start new testing container on port 8502
-        docker run -d --name docdig-testing -p 8502:8501 --restart unless-stopped $IMAGE_NAME:testing
+        docker run -d --name docdig-testing -p 8502:8501 --restart unless-stopped -v /opt/docdig/htr_vt:/app/config/htr_vt:ro $IMAGE_NAME:testing
         
         # Clean up old images
         docker image prune -f
@@ -185,9 +190,14 @@ deploy_production:
         # Stop and remove existing production container
         docker stop docdig-production || true
         docker rm docdig-production || true
-        
+
+        # HTR-VT checkpoint lives on the host (408 MB, not in git/image).
+        # Put best_WER.pth AND alphabet.json into /opt/docdig/htr_vt — with
+        # the directory empty, the app runs and Espece falls back to TrOCR.
+        mkdir -p /opt/docdig/htr_vt
+
         # Start new production container on port 8501
-        docker run -d --name docdig-production -p 8501:8501 --restart unless-stopped $IMAGE_NAME:production
+        docker run -d --name docdig-production -p 8501:8501 --restart unless-stopped -v /opt/docdig/htr_vt:/app/config/htr_vt:ro $IMAGE_NAME:production
         
         # Clean up old images
         docker image prune -f

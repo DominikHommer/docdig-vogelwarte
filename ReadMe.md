@@ -261,13 +261,14 @@ Deploy-Ablauf für einen neuen Stand:
 
 Wichtig für den Server (einmalig):
 
-- **HTR-VT-Checkpoint** liegt nicht im Image. Auf dem Host ablegen und den
-  `docker run` in `.gitlab-ci.yml` (oder das Compose-Setup) um
-  `-v /opt/docdig/htr_vt:/app/config/htr_vt:ro` ergänzen — sonst läuft die
-  Espèce-Spalte über TrOCR-Fallback.
-- **Nextcloud-Zugang**: `--env-file /opt/docdig/.env` an den `docker run`
-  hängen (oder die drei `NEXTCLOUD_*`-Variablen als GitLab-CI-Variablen
-  setzen und durchreichen), sonst fehlt der Upload-Button im Deployment.
+- **HTR-VT-Checkpoint** liegt nicht im Image. Die Deploy-Jobs mounten
+  `/opt/docdig/htr_vt` automatisch — dort müssen `best_WER.pth` **und**
+  `alphabet.json` liegen (z. B. per `scp config/htr_vt/best_WER.pth
+  config/htr_vt/alphabet.json <host>:/opt/docdig/htr_vt/`). Bleibt der
+  Ordner leer, läuft die App trotzdem; die Espèce-Spalte nutzt dann den
+  TrOCR-Fallback.
+- **Nextcloud**: kein Server-Setup nötig — der Login passiert pro Nutzer in
+  der App (Sidebar).
 - Benötigte CI-Variablen (bereits im Projekt konfiguriert, sonst unter
   Settings -> CI/CD -> Variables): `CI_REGISTRY_USER`,
   `CI_REGISTRY_PASSWORD`, `SSH_PRIVATE_KEY` (base64), `DEPLOY_HOST`,
