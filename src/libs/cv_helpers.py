@@ -73,6 +73,10 @@ def getVerticalLines(blur, xThres = 40, minFoundLines = 3, minLineLength = 50):
     if lines is None:
       return []
 
+    # OpenCV <5 returns (N,1,4), OpenCV 5 returns (N,4) — normalise to (N,1,4)
+    # so line[0] unpacking works everywhere.
+    lines = np.asarray(lines).reshape(-1, 1, 4)
+
     # x-Threshold "decides" if a line is indeed a vertical detected line
     verticalLines = []
     for line in lines:

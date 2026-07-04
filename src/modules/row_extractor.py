@@ -160,6 +160,9 @@ class RowExtractor(Module):
                         page_data['columns'][col_nr] = []
                         continue
 
+                    # OpenCV <5: (N,1,4), OpenCV 5: (N,4) — normalise.
+                    lines = np.asarray(lines).reshape(-1, 1, 4)
+
                     for line in lines:
                         x1, y1, x2, y2 = line[0]
 

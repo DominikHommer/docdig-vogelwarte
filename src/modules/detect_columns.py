@@ -127,8 +127,9 @@ class DetectColumns(Module):
                     is_poids = True
                     print(f"Found Poids Column!")
 
-                # Convert ndarray to dicts
-                cell_dicts = [{"image": img, "skip_ocr": False} for img in column_cells]
+                # Convert ndarray to dicts. `image_raw` preserves the original cell crop
+                # for downstream models trained on non-denoised input (e.g. HTR-VT).
+                cell_dicts = [{"image": img, "image_raw": img, "skip_ocr": False} for img in column_cells]
 
                 processed_page["columns"].append({
                     "cells": cell_dicts,
