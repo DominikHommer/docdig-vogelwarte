@@ -11,9 +11,17 @@ variables:
   DOCKER_BUILDKIT: 1
   BUILDKIT_PROGRESS: plain
   IMAGE_NAME: registry.vogelwarte.ch/$CI_PROJECT_PATH
+  # docker:dind >= 28 defaults to the nftables backend, which fails on this
+  # runner host ("can't open /proc/net/ip_tables_names"). Pin a known-good
+  # version instead of the floating :latest / :dind tags.
+  DOCKER_IMAGE_VERSION: "27.3.1"
+  # Per-build network instead of legacy container links — fixes the
+  # "Cannot link to a non running container" system failure and lets the
+  # dind service resolve as host "docker".
+  FF_NETWORK_PER_BUILD: "true"
 
 services:
-  - docker:dind
+  - docker:$DOCKER_IMAGE_VERSION-dind
 
 before_script:
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
@@ -21,7 +29,7 @@ before_script:
 
 build:
   stage: build
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   timeout: 2 hours
   script:
     # Build the image with cache
@@ -49,7 +57,7 @@ build:
 
 health-check:
   stage: health-check
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   timeout: 15m
   script:
     # Run container for health check
@@ -92,7 +100,7 @@ health-check:
 
 promote_to_testing:
   stage: promote
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   script:
     # Tag existing image as testing
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
@@ -106,7 +114,7 @@ promote_to_testing:
 
 promote_to_production:
   stage: promote
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   script:
     # Tag existing image as production
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:production
