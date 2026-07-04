@@ -8,11 +8,20 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./uploads:/app/uploads
-      - ./output:/app/output
+      # App-Daten (Uploads + CSV-Exporte)
+      - ./data:/app/data
+      # HTR-VT-Checkpoints sind zu gross fuers Image/Git (2x 408 MB, via
+      # Nextcloud verteilt) — lokal mounten. Ohne Mount laeuft die App auch,
+      # nur die Espece-Erkennung faellt auf TrOCR zurueck.
+      - ./config/htr_vt:/app/config/htr_vt:ro
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      # Nextcloud-Upload (optional): Werte kommen aus der lokalen .env
+      - NEXTCLOUD_URL=${NEXTCLOUD_URL:-}
+      - NEXTCLOUD_USER=${NEXTCLOUD_USER:-}
+      - NEXTCLOUD_PASSWORD=${NEXTCLOUD_PASSWORD:-}
+      - NEXTCLOUD_DIR=${NEXTCLOUD_DIR:-/docdig}
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
       interval: 30s

@@ -29,6 +29,18 @@ debug/*
 data/input/*
 data/output/*
 
+# Heavy training data + external uploads — not part of the app.
+# (Trained runtime models in config/ ARE tracked: *.keras / *.pt, matching
+# the existing classifier_model.keras / denoise_model.keras practice.
+# The 400MB HTR-VT checkpoints are covered by *.pth above — they are
+# distributed via Nextcloud, see ReadMe "Modelle".)
+Digit-Recognition/DIDA/
+Digit-Recognition/DIDA.zip
+M-W-Classification/dataset/
+FelixUpload/
+crops/
+.claude/
+
 # Environments
 .env
 .venv

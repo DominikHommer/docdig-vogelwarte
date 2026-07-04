@@ -1,3 +1,19 @@
+# TATR weights are downloaded during the image build (see docker/Dockerfile)
 config/*.pth
 config/pubtables1m_detection_detr_r18.pth
 config/pubtables1m_structure_detr_r18.pth
+
+# Never ship into the image: envs, training data, uploads, tests, worktrees
+.venv
+.git
+.claude
+data
+debug
+crops
+FelixUpload
+Digit-Recognition
+M-W-Classification/dataset
+files-3
+tests
+artefacts
+config/htr_vt/*.pth

@@ -58,7 +58,11 @@ class TableRotator(Module):
 
             vl = getVerticalLines(blur, self.xThres, self.minFoundLines)
             if not vl:
-                return
+                # Could not detect rotation references — keep the page as-is
+                # rather than dropping every subsequent page in the run.
+                print(f"[TableRotator] No vertical lines on {path}; using image unrotated.")
+                out.append(base_img)
+                continue
 
             img_rotated = rotateImg(base_img, vl)
             out.append(img_rotated)

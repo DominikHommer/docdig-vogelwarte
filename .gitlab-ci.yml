@@ -5,15 +5,17 @@ stages:
   - deploy
 
 variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_HOST: tcp://docker:2375
   DOCKER_BUILDKIT: 1
   BUILDKIT_PROGRESS: plain
   IMAGE_NAME: registry.vogelwarte.ch/$CI_PROJECT_PATH
+  # Pinned CLI image — floating :latest broke the pipeline before.
+  DOCKER_IMAGE_VERSION: "27.3.1"
 
-services:
-  - docker:dind
+# NOTE: no docker:dind service here. The runner (merops-01) mounts the host
+# Docker socket into job containers (socket binding) — a dind daemon cannot
+# even bind /var/run/docker.sock ("device or resource busy"). The docker CLI
+# in the job talks straight to the host daemon via the mounted socket, so
+# neither DOCKER_HOST nor a service is needed.
 
 before_script:
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
@@ -21,7 +23,7 @@ before_script:
 
 build:
   stage: build
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   timeout: 2 hours
   script:
     # Build the image with cache
@@ -49,11 +51,14 @@ build:
 
 health-check:
   stage: health-check
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   timeout: 15m
   script:
-    # Run container for health check
-    - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:$CI_COMMIT_SHA
+    # Run container for health check. Because builds share the HOST docker
+    # daemon (socket binding), publish no ports (8502 may be taken by the
+    # deployed testing container) and clean up any leftover test container.
+    - docker rm -f docdig-test || true
+    - docker run -d --name docdig-test $IMAGE_NAME:$CI_COMMIT_SHA
     - echo "Waiting for container to start..."
     - sleep 60
     # Check if container is healthy with retry logic
@@ -92,7 +97,7 @@ health-check:
 
 promote_to_testing:
   stage: promote
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   script:
     # Tag existing image as testing
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:testing
@@ -106,7 +111,7 @@ promote_to_testing:
 
 promote_to_production:
   stage: promote
-  image: docker:latest
+  image: docker:$DOCKER_IMAGE_VERSION
   script:
     # Tag existing image as production
     - docker tag $IMAGE_NAME:latest $IMAGE_NAME:production
@@ -141,9 +146,14 @@ deploy_testing:
         # Stop and remove existing testing container
         docker stop docdig-testing || true
         docker rm docdig-testing || true
-        
+
+        # HTR-VT checkpoint lives on the host (408 MB, not in git/image).
+        # Put best_WER.pth AND alphabet.json into /opt/docdig/htr_vt — with
+        # the directory empty, the app runs and Espece falls back to TrOCR.
+        mkdir -p /opt/docdig/htr_vt
+
         # Start new testing container on port 8502
-        docker run -d --name docdig-testing -p 8502:8501 --restart unless-stopped $IMAGE_NAME:testing
+        docker run -d --name docdig-testing -p 8502:8501 --restart unless-stopped -v /opt/docdig/htr_vt:/app/config/htr_vt:ro $IMAGE_NAME:testing
         
         # Clean up old images
         docker image prune -f
@@ -180,9 +190,14 @@ deploy_production:
         # Stop and remove existing production container
         docker stop docdig-production || true
         docker rm docdig-production || true
-        
+
+        # HTR-VT checkpoint lives on the host (408 MB, not in git/image).
+        # Put best_WER.pth AND alphabet.json into /opt/docdig/htr_vt — with
+        # the directory empty, the app runs and Espece falls back to TrOCR.
+        mkdir -p /opt/docdig/htr_vt
+
         # Start new production container on port 8501
-        docker run -d --name docdig-production -p 8501:8501 --restart unless-stopped $IMAGE_NAME:production
+        docker run -d --name docdig-production -p 8501:8501 --restart unless-stopped -v /opt/docdig/htr_vt:/app/config/htr_vt:ro $IMAGE_NAME:production
         
         # Clean up old images
         docker image prune -f
