@@ -1,0 +1,74 @@
+{
+  "source_file": "scan_1972_CdB_1_20231125160539.pdf",
+  "year": 1972,
+  "location": "Col de Bretolet",
+  "station": "Station ornithologique suisse de Sempach",
+  "form_type": "Liste de baguement (A)",
+  "pages_labeled": 6,
+  "total_pages": 19,
+  "has_ditto_marks": true,
+  "ditto_mark_notation": [
+    "\"",
+    "''",
+    "//",
+    "ii"
+  ],
+  "ditto_mark_handling": "preserved",
+  "ditto_mark_csv_representation": "Cells that contain a ditto mark in the scan are written as the literal character \" in the CSV (CSV-escaped as \"\"\"\"). Resolving them to the repeated value is the parser's job, not the ground truth.",
+  "bague_prefix": "9",
+  "bague_number_range": {
+    "start": "90359",
+    "end_labeled": "90650"
+  },
+  "baguers": [
+    {"pages": [1], "name": "LW (initials)"},
+    {"pages": [2], "name": "LW / RW"},
+    {"pages": [3, 4, 5, 6], "name": "Raffael Winkler"}
+  ],
+  "ui_column_order": [
+    "bague_no",
+    "espece",
+    "sexe",
+    "age",
+    "jour_mois",
+    "heure",
+    "aile",
+    "poids",
+    "notes"
+  ],
+  "columns_transcribed": [
+    "bague_no",
+    "espece",
+    "sexe",
+    "aile",
+    "poids",
+    "notes"
+  ],
+  "columns_left_blank_by_design": [
+    "age",
+    "jour_mois",
+    "heure"
+  ],
+  "files": [
+    {"page": 1, "csv": "scan_1972_sample_page1.expected.csv", "bague_range": ["90359", "90400"], "blank_header_rows": 8},
+    {"page": 2, "csv": "scan_1972_sample_page2.expected.csv", "bague_range": ["90401", "90450"], "blank_header_rows": 0},
+    {"page": 3, "csv": "scan_1972_sample_page3.expected.csv", "bague_range": ["90451", "90500"], "blank_header_rows": 0},
+    {"page": 4, "csv": "scan_1972_sample_page4.expected.csv", "bague_range": ["90501", "90550"], "blank_header_rows": 0},
+    {"page": 5, "csv": "scan_1972_sample_page5.expected.csv", "bague_range": ["90551", "90600"], "blank_header_rows": 0},
+    {"page": 6, "csv": "scan_1972_sample_page6.expected.csv", "bague_range": ["90601", "90650"], "blank_header_rows": 0}
+  ],
+  "language_mix": ["fr", "de"],
+  "form_language": "fr",
+  "species_language": "de",
+  "notes": [
+    "Form headers and labels are in French; species names are written in German by the bander.",
+    "Page 1 has 8 blank rows at the top of the table (no bague number assigned), preserved in the CSV as empty rows so row positions match the scan.",
+    "Bague numbers are recorded as a 5-digit number where the leading '9' is printed on the form and the bander fills in the last 4 digits. We expanded these to full 5-digit numbers (e.g. '359' on the form -> '90359').",
+    "Sex column uses symbols: X = the cross/check mark used on the form, m = male (Mars symbol), f = female (Venus symbol). Parentheses like '(f)' indicate uncertain sex determination by the bander.",
+    "Ditto marks (\", '', //, ii) are kept as the literal character \" in the CSV - they are NOT resolved to the repeated species name. The parser/pipeline is expected to resolve them.",
+    "Foreign-ring recaptures appear in the notes column (e.g. 'Paris 1429551', 'Paris 12706261', '25009', '25010', '26700').",
+    "'Brutfleck' (brood patch) in the notes column marks breeding females.",
+    "Weights (Poids) are in grams; wing lengths (Aile) are in mm.",
+    "Handwriting quality degrades on pages 5-6; ambiguous cells are left as best-guess. Row 90519 ('Riley Ventoux') is an annotation in the species field rather than a bird entry; left without measurements."
+  ]
+}
