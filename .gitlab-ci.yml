@@ -5,23 +5,17 @@ stages:
   - deploy
 
 variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_HOST: tcp://docker:2375
   DOCKER_BUILDKIT: 1
   BUILDKIT_PROGRESS: plain
   IMAGE_NAME: registry.vogelwarte.ch/$CI_PROJECT_PATH
-  # docker:dind >= 28 defaults to the nftables backend, which fails on this
-  # runner host ("can't open /proc/net/ip_tables_names"). Pin a known-good
-  # version instead of the floating :latest / :dind tags.
+  # Pinned CLI image — floating :latest broke the pipeline before.
   DOCKER_IMAGE_VERSION: "27.3.1"
-  # Per-build network instead of legacy container links — fixes the
-  # "Cannot link to a non running container" system failure and lets the
-  # dind service resolve as host "docker".
-  FF_NETWORK_PER_BUILD: "true"
 
-services:
-  - docker:$DOCKER_IMAGE_VERSION-dind
+# NOTE: no docker:dind service here. The runner (merops-01) mounts the host
+# Docker socket into job containers (socket binding) — a dind daemon cannot
+# even bind /var/run/docker.sock ("device or resource busy"). The docker CLI
+# in the job talks straight to the host daemon via the mounted socket, so
+# neither DOCKER_HOST nor a service is needed.
 
 before_script:
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
@@ -60,8 +54,11 @@ health-check:
   image: docker:$DOCKER_IMAGE_VERSION
   timeout: 15m
   script:
-    # Run container for health check
-    - docker run -d --name docdig-test -p 8502:8501 $IMAGE_NAME:$CI_COMMIT_SHA
+    # Run container for health check. Because builds share the HOST docker
+    # daemon (socket binding), publish no ports (8502 may be taken by the
+    # deployed testing container) and clean up any leftover test container.
+    - docker rm -f docdig-test || true
+    - docker run -d --name docdig-test $IMAGE_NAME:$CI_COMMIT_SHA
     - echo "Waiting for container to start..."
     - sleep 60
     # Check if container is healthy with retry logic
