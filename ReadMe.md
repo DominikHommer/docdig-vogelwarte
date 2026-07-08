@@ -117,7 +117,7 @@ Bague anchor edits are the deliberate exception (full column rebuild, cache
 invalidated). Letter prefixes in ring numbers ("A90401") survive rebuilds.
 
 Two-monitor workflow: "Nur Tabelle" layout + "Scan in neuem Tab öffnen"
-(served via Streamlit static serving from `./static/pages/`). In split view
+(served via Streamlit static serving from `src/static/pages/`). In split view
 the scan panel follows the table via the row-focus slider (proportional band
 crop). The Sexe dropdown options are user-editable (sidebar → Sexe-Auswahl,
 stored in `config/sexe_options.json`).

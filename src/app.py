@@ -88,7 +88,10 @@ INPUT_DIR = Path("data/input")
 OUTPUT_DIR = Path("data/output")
 # Static serving (see .streamlit/config.toml) — page scans are copied here so
 # they can be opened in a separate browser tab / second monitor.
-STATIC_PAGES_DIR = Path("static/pages")
+# Streamlit resolves the static root NEXT TO THE ENTRYPOINT (src/static), and
+# serves it under <base>/app/static/... — both verified against a running
+# server (the other combinations return the SPA catch-all page or 404).
+STATIC_PAGES_DIR = Path("src/static/pages")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -519,10 +522,9 @@ if not st.session_state.get("uploaded"):
         target = static_dir / f"page_{i + 1}{Path(page_file).suffix or '.jpg'}"
         try:
             shutil.copyfile(page_file, target)
-            # Streamlit serves ./static at <base>/static/ — verified: the
-            # "app/static/..." form from the docs 404s on a default setup.
+            # URL path: src/static/... on disk -> app/static/... over HTTP.
             # Relative href, so it also works behind a proxy base path.
-            static_urls.append(target.as_posix())
+            static_urls.append(f"app/{target.relative_to('src').as_posix()}")
         except Exception:
             static_urls.append(None)
     st.session_state.page_static_urls = static_urls
