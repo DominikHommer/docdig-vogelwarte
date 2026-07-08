@@ -14,6 +14,7 @@ Convention on the cell dictionaries used by the bague column:
   only), 30 (per-cell OCR without anchor), -1 (no value).
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -82,6 +83,24 @@ def parse_anchor(text: Optional[str]) -> Optional[int]:
         return None
 
 
+def split_anchor(text: Optional[str]) -> Optional[Tuple[str, int, int]]:
+    """Split an anchor value into (letter_prefix, number, digit_width).
+
+    Ring series can carry a letter prefix ("A90401") — the prefix is part of
+    the ring number and must survive sequence rebuilds, while only the digit
+    part counts up. Returns None when no digits are present.
+    """
+    if not text:
+        return None
+    match = re.fullmatch(r"\s*([A-Za-z]{0,4})[\s.\-]*(\d{1,9})\s*", str(text))
+    if match:
+        return match.group(1).upper() if match.group(1) else "", int(match.group(2)), len(match.group(2))
+    digits = "".join(c for c in str(text) if c.isdigit())
+    if not digits:
+        return None
+    return "", int(digits), len(digits)
+
+
 def mark_manual_edit(cell: Dict) -> None:
     """Call this when the user manually changes a cell — protects it from rebuild.
 
@@ -145,15 +164,21 @@ def rebuild_batch_sequence(
         anchor_cell["skip_ocr"] = True
 
     anchor_text = (anchor_cell.get("erkannt") or "").strip()
-    start = parse_anchor(anchor_text)
-    stats["anchor"] = start
-    if start is None:
+    parsed = split_anchor(anchor_text)
+    if parsed is None:
         # Without a parseable anchor we cannot extrapolate. Leave cells alone.
+        stats["anchor"] = None
         return stats
+    prefix, start, digit_width = parsed
+    stats["anchor"] = start
 
     # Preserve the anchor's printed width so "001" stays zero-padded, not "1".
-    digit_chars = [c for c in anchor_text if c.isdigit()]
-    width = max(len(digit_chars), len(str(start)))
+    width = max(digit_width, len(str(start)))
+
+    def _format(value: int) -> str:
+        # Letter prefixes ("A90401") belong to the ring series and survive
+        # rebuilds; only the digit part counts up.
+        return f"{prefix}{str(value).zfill(width)}"
 
     def _fill(cell: Dict, target: str) -> None:
         is_manual = cell.get("is_manual_edit", False)
@@ -173,9 +198,7 @@ def rebuild_batch_sequence(
 
     # Forward from the anchor (anchor itself included).
     for offset, cell in enumerate(cells[anchor_idx:]):
-        target = str(start + offset)
-        if len(target) < width:
-            target = target.zfill(width)
+        target = _format(start + offset)
 
         if offset == 0:
             cell["erkannt"] = target
@@ -195,10 +218,7 @@ def rebuild_batch_sequence(
         value = start - back
         if value <= 0:
             break
-        target = str(value)
-        if len(target) < width:
-            target = target.zfill(width)
-        _fill(cell, target)
+        _fill(cell, _format(value))
 
     return stats
 

@@ -2,5 +2,7 @@
 headless = true
 runOnSave = true
 allowRunOnSave = true
-fastReruns = true
 fileWatcherType = "auto"
+# Serves ./static at /app/static — used for "Scan in neuem Tab öffnen"
+# (second-monitor workflow).
+enableStaticServing = true

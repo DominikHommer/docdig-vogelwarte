@@ -1,25 +1,31 @@
 """Streamlit UI for DocDig — bird-banding list digitisation.
 
 Layout:
-- Sidebar: file info, page navigation, stats, CSV export.
-- Main:    original scan on the left, editable table on the right.
-- Editing:
-    * Bague anchor cell -> resyncs the whole column (via rebuild_batch_sequence)
-    * Any other cell    -> marked as manual edit, kept verbatim from then on
-- The CellDenoiser was dropped from the pipeline (made downstream OCR worse).
-  Cells stay dark text on white background end to end.
+- Sidebar: file info, CSV export, Nextcloud, catalogs, help.
+- Main:    scan panel (own fragment, row-focus crop) | editable table
+           (own fragment) — or table-only mode for two-monitor work.
+
+Editing architecture (WICHTIG — do not regress this):
+- The editor DataFrame is built ONCE per page and cached in session state.
+  `st.data_editor` gets the SAME object every rerun, so the grid keeps its
+  scroll position and focused cell.
+- Edits flow through the widget's ``edited_rows`` delta in an ``on_change``
+  callback (libs/editing.apply_editor_deltas) — there is NO forced full
+  rerun per keystroke. The editor lives in a fragment, so its interactions
+  never redraw the rest of the page (no jump to top, the scan panel and its
+  fullscreen state survive).
+- Status columns (✓/⚠) are snapshots from cache-build time; the refresh
+  button re-computes them deliberately (updating them per edit would reset
+  the grid — Streamlit issue #10181).
+- Bague anchor edits are the exception: they rebuild the whole column and
+  invalidate the page cache.
 """
 
 import os
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 
-import base64
-import csv
-import io
-import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -43,8 +49,19 @@ from modules.sexe_classifier import SexeClassifier
 from modules.trocr import TrOCR
 from modules.fuzzy_matching import FuzzyMatchingBirdNames, FuzzyMatchingAge
 from modules.numeric_consensus import NumericConsensus
-from libs.bague_sequence import mark_manual_edit, rebuild_batch_sequence
-from libs.columns import COLUMN_FLAG_TO_LABEL, column_label as _column_label
+from libs.bague_sequence import mark_manual_edit
+from libs.editing import apply_editor_deltas
+from libs.table_view import (
+    build_csv_bytes,
+    compute_row_confidence,
+    page_to_dataframe,
+)
+from libs.value_catalog import (
+    add_option as catalog_add_option,
+    load_options as catalog_load_options,
+    options_with_values as catalog_options_with_values,
+    remove_option as catalog_remove_option,
+)
 from libs.nextcloud import (
     DEFAULT_REMOTE_DIR as NEXTCLOUD_DEFAULT_DIR,
     NextcloudConfig,
@@ -67,18 +84,14 @@ from libs.species_catalog import (
 # ──────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────
-# Every extracted column is shown — the semantic ones (COLUMN_FLAG_TO_LABEL,
-# see libs/columns.py) with their form label, everything else as "Spalte N".
-
-# Order the columns in the editor the way they appear on the forms.
-VISIBLE_COLUMN_ORDER = list(COLUMN_FLAG_TO_LABEL.values())
-
-# m/w kommen vom deutschsprachigen Beringer (M-W-Classification), f/(f) aus
-# den französischen Formularen.
-SEXE_OPTIONS = ["", "m", "w", "f", "(f)", "?", "X"]
-
 INPUT_DIR = Path("data/input")
 OUTPUT_DIR = Path("data/output")
+# Static serving (see .streamlit/config.toml) — page scans are copied here so
+# they can be opened in a separate browser tab / second monitor.
+# Streamlit resolves the static root NEXT TO THE ENTRYPOINT (src/static), and
+# serves it under <base>/app/static/... — both verified against a running
+# server (the other combinations return the SPA catch-all page or 404).
+STATIC_PAGES_DIR = Path("src/static/pages")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -158,197 +171,110 @@ def build_base_pipeline():
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Helpers
+# Editor page-view cache
 # ──────────────────────────────────────────────────────────────────────
-def visible_columns(page: dict):
-    """Return [(col_idx_in_predictions, label), ...] in the order to display.
-
-    Every extracted column is included: semantically tagged columns get their
-    form label, untagged ones show up as "Spalte N" at their scan position.
-    """
-    labelled = []
-    seen: dict[str, int] = {}
-    for i, col in enumerate(page.get("columns", [])):
-        label = _column_label(col, index=i)
-        # Detector can tag two columns identically — disambiguate so the
-        # DataFrame keeps one column per extracted column.
-        if label in seen:
-            seen[label] += 1
-            label = f"{label} ({seen[label]})"
-        else:
-            seen[label] = 1
-        labelled.append((i, label))
-    # Sort to follow VISIBLE_COLUMN_ORDER; unknown labels keep scan order at the end.
-    order = {name: rank for rank, name in enumerate(VISIBLE_COLUMN_ORDER)}
-    labelled.sort(key=lambda pair: (order.get(pair[1], 999), pair[0]))
-    return labelled
+# One entry per page: the editor DataFrame (incl. thumbnails — expensive!),
+# status snapshot and review list. Built once, reused across reruns so the
+# data_editor keeps scroll + focus. Invalidated explicitly (refresh button,
+# anchor rebuild, reprocessing).
 
 
-def _cell_image_data_uri(image, max_h: int = 36, max_w: int = 220) -> str:
-    """Encode a cell crop as a base64 data URI for `st.column_config.ImageColumn`.
+def get_page_view(page_idx: int) -> dict:
+    cache = st.session_state.setdefault("editor_cache", {})
+    entry = cache.get(page_idx)
+    if entry is not None:
+        return entry
 
-    Resizes to a thumbnail so the editor stays snappy. Returns an empty string
-    when the crop is missing or unreadable.
-    """
-    if image is None:
-        return ""
-    try:
-        import cv2
+    version = st.session_state.setdefault("editor_cache_version", {}).get(page_idx, 0)
+    page = st.session_state.predictions[page_idx]
+    df, visible = page_to_dataframe(page, include_thumbnails=True)
+    row_conf = compute_row_confidence(page, visible, len(df))
 
-        arr = np.asarray(image)
-        if arr.size == 0:
-            return ""
-        if arr.dtype != np.uint8:
-            mx = float(arr.max()) if arr.size else 1.0
-            if 0.0 <= float(arr.min()) and mx <= 1.0:
-                arr = (arr * 255.0).astype(np.uint8)
-            else:
-                arr = np.clip(arr, 0, 255).astype(np.uint8)
-        if arr.ndim == 2:
-            arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2RGB)
-        elif arr.ndim == 3 and arr.shape[-1] == 4:
-            arr = arr[:, :, :3]
+    df_status = df.copy()
+    df_status.insert(0, "✓", [c[0] for c in row_conf])
+    if any(c[2] for c in row_conf):
+        df_status["⚠"] = ["↔" if c[2] else "" for c in row_conf]
 
-        h, w = arr.shape[:2]
-        scale = min(max_h / max(h, 1), max_w / max(w, 1), 1.0)
-        if scale < 1.0:
-            arr = cv2.resize(
-                arr,
-                (max(1, int(w * scale)), max(1, int(h * scale))),
-                interpolation=cv2.INTER_AREA,
-            )
-
-        ok, buf = cv2.imencode(".png", cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
-        if not ok:
-            return ""
-        return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode()
-    except Exception:
-        return ""
-
-
-def page_to_dataframe(page: dict, include_thumbnails: bool = True):
-    """Build (df, [(col_idx, label), ...]) for one page. Every extracted
-    column is included (semantic label or "Spalte N" fallback).
-
-    With ``include_thumbnails=True`` each value column is preceded by a `📷`
-    column containing the base64-encoded cell crop, so the user can verify
-    what the OCR actually saw without leaving the table.
-    """
-    columns = page.get("columns", [])
-    visible = visible_columns(page)
-    if not visible:
-        return pd.DataFrame(), []
-
-    max_data_rows = max((len(col.get("cells", [])) - 1) for col in columns) if columns else 0
-    max_data_rows = max(max_data_rows, 0)
-
-    ordered_keys: list[str] = []
-    data: dict = {}
-
+    # Review list: cells where recognizers disagreed (alternatives present).
+    review_items = []
+    high = mid = low = empty = 0
     for col_i, label in visible:
-        img_key = f"📷 {label}" if include_thumbnails else None
-        if img_key:
-            ordered_keys.append(img_key)
-            data[img_key] = []
-        ordered_keys.append(label)
-        data[label] = []
+        col = page["columns"][col_i]
+        for c_idx, cell in enumerate(col.get("cells", [])[1:], start=1):
+            score = int(cell.get("score", -1) or -1)
+            if not (cell.get("erkannt") or "").strip():
+                empty += 1
+            elif score >= 95:
+                high += 1
+            elif score >= 60:
+                mid += 1
+            elif score >= 0:
+                low += 1
+            alts = cell.get("alternatives") or []
+            if alts and score < 95:
+                review_items.append(
+                    (c_idx, label, cell.get("erkannt", ""), alts[0], score, col_i)
+                )
 
-    for row_i in range(1, max_data_rows + 1):
-        for col_i, label in visible:
-            cells = columns[col_i].get("cells", [])
-            cell = cells[row_i] if row_i < len(cells) else None
-            value = (cell.get("erkannt") if cell else "") or ""
-            data[label].append(value.strip())
-            if include_thumbnails:
-                img_key = f"📷 {label}"
-                source = cell.get("image_raw") if cell else None
-                if source is None and cell is not None:
-                    source = cell.get("image")
-                data[img_key].append(_cell_image_data_uri(source))
+    entry = {
+        "version": version,
+        "df": df,
+        "df_status": df_status,
+        "visible": visible,
+        "labels": [label for _, label in visible],
+        "row_conf": row_conf,
+        "review_items": review_items,
+        "stats": {"high": high, "mid": mid, "low": low, "empty": empty},
+        # Set at render time to the CURRENTLY displayed row index (filtering!)
+        # — the on_change callback maps edited_rows positions through this.
+        "display_index": list(df.index),
+    }
+    cache[page_idx] = entry
+    return entry
 
-    df = pd.DataFrame(data, columns=ordered_keys)
-    df.index = pd.RangeIndex(start=1, stop=len(df) + 1, name="#")
-    return df, visible
+
+def refresh_page_view(page_idx: int) -> None:
+    """Drop the cached view — the next build gets a new editor key (version),
+    which deliberately resets the grid (used after anchor rebuilds and for
+    the explicit refresh button)."""
+    st.session_state.setdefault("editor_cache", {}).pop(page_idx, None)
+    versions = st.session_state.setdefault("editor_cache_version", {})
+    versions[page_idx] = versions.get(page_idx, 0) + 1
 
 
-def sync_edits(page_idx: int, edited_df: pd.DataFrame, visible) -> int:
-    """Push user edits in the data editor back into st.session_state.predictions.
+def _on_editor_change(page_idx: int, editor_key: str) -> None:
+    """data_editor on_change: apply the edited_rows delta to the predictions.
 
-    `visible` is the [(col_idx, label), ...] mapping from `page_to_dataframe`.
-    Returns the number of cells that were updated (for the toast).
-
-    Side effect: if the user typed an Espèce that is not in the species
-    catalog, the name gets queued in ``st.session_state.pending_species`` so
-    the UI can offer to save it permanently.
+    Runs before the fragment rerun. NO st.rerun() here — the grid keeps its
+    state; predictions are the single source of truth for exports.
     """
-    pred = st.session_state.predictions[page_idx]
-    columns = pred["columns"]
-    changed = 0
-    bague_rebuilds = []
+    state = st.session_state.get(editor_key)
+    entry = st.session_state.get("editor_cache", {}).get(page_idx)
+    if not state or entry is None:
+        return
+    deltas = getattr(state, "edited_rows", None) or state.get("edited_rows") or {}
+    if not deltas:
+        return
+
+    page = st.session_state.predictions[page_idx]
+    results = apply_editor_deltas(
+        page,
+        deltas,
+        displayed_index=entry["display_index"],
+        visible=entry["visible"],
+        species_catalog=st.session_state.get("species_catalog_cache"),
+    )
+
     pending = st.session_state.setdefault("pending_species", [])
-    known_catalog = species_load()
-
-    for col_i, label in visible:
-        if col_i >= len(columns) or label not in edited_df.columns:
-            continue
-        col = columns[col_i]
-        cells = col.get("cells", [])
-        is_bague = col.get("is_batch_column", False)
-        is_species = col.get("is_species_column", False)
-
-        for row_offset, new_value in enumerate(edited_df[label].fillna("").tolist()):
-            cell_i = row_offset + 1  # skip header
-            if cell_i >= len(cells):
-                break
-            cell = cells[cell_i]
-            old_value = (cell.get("erkannt") or "").strip()
-            new_value = (new_value or "").strip()
-            if new_value == old_value:
-                continue
-
-            cell["erkannt"] = new_value
-            changed += 1
-
-            if is_bague and cell.get("is_anchor"):
-                bague_rebuilds.append((col, new_value))
-            elif is_bague:
-                mark_manual_edit(cell)
-                cell["score"] = 100
-            else:
-                cell["skip_ocr"] = True
-                cell["score"] = 100
-
-            # Track unknown species so the UI can offer to persist them.
-            if is_species and new_value and new_value != '"':
-                if not species_known(new_value, catalog=known_catalog):
-                    key = (page_idx, col_i, cell_i, new_value)
-                    if key not in pending:
-                        pending.append(key)
-
-    for col, new_value in bague_rebuilds:
-        stats = rebuild_batch_sequence(col, anchor_value=new_value)
-        st.toast(
-            f"🔄 Bague-Spalte aus Anker {stats['anchor']} neu berechnet "
-            f"({stats['filled']} Zellen)."
-        )
-
-    return changed
-
-
-def build_csv() -> bytes:
-    """Build a single CSV from all pages. Same layout as the editor table."""
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=";")
-    for page_idx, page in enumerate(st.session_state.predictions):
-        if page is None:
-            continue
-        df, visible = page_to_dataframe(page)
-        writer.writerow([f"Seite {page_idx + 1}"])
-        writer.writerow([label for _, label in visible])
-        for _, row in df.iterrows():
-            writer.writerow(row.tolist())
-        writer.writerow([])
-    return output.getvalue().encode("utf-8-sig")
+    for r in results:
+        if r.unknown_species:
+            key = (page_idx, r.unknown_species)
+            if key not in pending:
+                pending.append(key)
+        if r.anchor_rebuilt and r.rebuild_stats:
+            # Column values changed wholesale — rebuild the view (new grid).
+            st.session_state["_anchor_rebuild_toast"] = r.rebuild_stats
+            refresh_page_view(page_idx)
 
 
 def reset_session():
@@ -451,7 +377,7 @@ with st.sidebar:
         if st.session_state.get("predictions") and any(
             p is not None for p in st.session_state.predictions
         ):
-            csv_bytes = build_csv()
+            csv_bytes = build_csv_bytes(st.session_state.predictions)
             csv_name = f"{Path(st.session_state.uploaded_name).stem}.csv"
             st.download_button(
                 "📥 CSV herunterladen",
@@ -511,16 +437,51 @@ with st.sidebar:
                 with st.popover("Liste anzeigen", use_container_width=True):
                     st.write(", ".join(catalog))
 
+        # ── Sexe-Auswahl verwalten ─────────────────────────────────────
+        with st.expander("⚥ Sexe-Auswahl", expanded=False):
+            sexe_options = catalog_load_options("sexe")
+            st.caption(
+                "Einträge der Sexe-Auswahlliste im Editor. Eigene Kürzel "
+                "wie „(m)?“ einfach ergänzen."
+            )
+            with st.form("add_sexe_option", clear_on_submit=True, border=False):
+                new_opt = st.text_input(
+                    "Neuen Eintrag hinzufügen",
+                    placeholder="z. B. (m)?",
+                    label_visibility="collapsed",
+                )
+                if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
+                    ok, msg = catalog_add_option("sexe", new_opt)
+                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
+                    if ok:
+                        refresh_page_view(st.session_state.get("page_idx", 0))
+            removable = [o for o in sexe_options if o]
+            if removable:
+                rm_cols = st.columns([3, 1])
+                to_remove = rm_cols[0].selectbox(
+                    "Eintrag entfernen", removable, label_visibility="collapsed"
+                )
+                if rm_cols[1].button("🗑", key="rm-sexe-option"):
+                    ok, msg = catalog_remove_option("sexe", to_remove)
+                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
+                    if ok:
+                        refresh_page_view(st.session_state.get("page_idx", 0))
+                        st.rerun()
+
         st.divider()
         st.markdown("##### Hilfe")
         st.markdown(
             """
-- 🟢 / 🟡 / 🔴 zeigt die Konfidenz pro Zeile
-- **⚓ Anker-Zelle** (erste Bague-Zeile): Änderung rechnet die ganze Bague-Spalte neu
-- **⚠ Review-Banner** oben: Cells wo HTR-VT und TrOCR sich uneinig waren
+- 🟢 / 🟡 / 🔴 zeigt die Konfidenz pro Zeile (Stand beim Seitenaufbau —
+  der 🔄-Button über der Tabelle berechnet sie neu)
+- **⚓ Anker-Zelle** (Bague): Änderung rechnet die ganze Spalte neu —
+  Buchstaben-Präfixe wie `A90401` bleiben erhalten
+- **Ditto („gleich wie oben“)**: einfach `"` in die Zelle tippen
 - **Tab / Enter** zur nächsten Zelle (wie in Excel)
-- **Unbekannter Vogelname?** Trag ihn in die Espèce-Spalte ein, dann erscheint
-  oben ein Hinweis zum Speichern.
+- **Zweiter Bildschirm**: „Scan in neuem Tab öffnen“ über dem Scan-Panel,
+  dazu Ansicht „Nur Tabelle“
+- **Unbekannter Vogelname?** Eintragen → oben erscheint ein Hinweis zum
+  Speichern in den Katalog.
             """
         )
 
@@ -549,6 +510,24 @@ if not st.session_state.get("uploaded"):
     with st.spinner("PDF wird in Einzelseiten zerlegt …"):
         base = build_base_pipeline()
         all_pages = base.run(input_data=str(pdf_path))
+
+    # Copy the page scans into the statically served dir so each page can be
+    # opened in its own browser tab (second-monitor workflow).
+    import shutil
+
+    static_dir = STATIC_PAGES_DIR / Path(uploaded.name).stem
+    static_dir.mkdir(parents=True, exist_ok=True)
+    static_urls = []
+    for i, page_file in enumerate(all_pages):
+        target = static_dir / f"page_{i + 1}{Path(page_file).suffix or '.jpg'}"
+        try:
+            shutil.copyfile(page_file, target)
+            # URL path: src/static/... on disk -> app/static/... over HTTP.
+            # Relative href, so it also works behind a proxy base path.
+            static_urls.append(f"app/{target.relative_to('src').as_posix()}")
+        except Exception:
+            static_urls.append(None)
+    st.session_state.page_static_urls = static_urls
 
     st.session_state.uploaded_name = uploaded.name
     st.session_state.pdf_path = str(pdf_path)
@@ -585,9 +564,17 @@ if not st.session_state.get("processed"):
 # ──────────────────────────────────────────────────────────────────────
 page_idx = st.session_state.page_idx
 page = st.session_state.predictions[page_idx]
-df, visible = page_to_dataframe(page)
-column_labels = [label for _, label in visible]
 n_pages = len(st.session_state.all_pages)
+
+# Catalog snapshot for the edit callback (cheap file read).
+st.session_state["species_catalog_cache"] = species_load()
+
+view = get_page_view(page_idx)
+review_items = view["review_items"]
+high_conf = view["stats"]["high"]
+mid_conf = view["stats"]["mid"]
+low_conf = view["stats"]["low"]
+empty = view["stats"]["empty"]
 
 
 # ---- per-cell metadata (score, alternatives) lookups ----------------------
@@ -596,29 +583,6 @@ def _cell_meta(page, col_i, row):
     if row >= len(cells):
         return None
     return cells[row]
-
-
-# Build a (row, label, chosen, alt, score, col_i) review list once — used by
-# both the top banner and the row-status column.
-review_items = []
-high_conf = mid_conf = low_conf = empty = 0
-for col_i, label in visible:
-    col = page["columns"][col_i]
-    for c_idx, cell in enumerate(col.get("cells", [])[1:], start=1):
-        score = int(cell.get("score", -1) or -1)
-        if not (cell.get("erkannt") or "").strip():
-            empty += 1
-        elif score >= 95:
-            high_conf += 1
-        elif score >= 60:
-            mid_conf += 1
-        elif score >= 0:
-            low_conf += 1
-        alts = cell.get("alternatives") or []
-        if alts and score < 95:
-            review_items.append(
-                (c_idx, label, cell.get("erkannt", ""), alts[0], score, col_i)
-            )
 
 # Document-wide aggregate (for the header progress bar).
 # Every extracted column counts — the UI shows them all.
@@ -647,6 +611,7 @@ with header_cols[0]:
         "◀ Zurück", use_container_width=True, disabled=(page_idx == 0), key="nav_prev_main"
     ):
         st.session_state.page_idx -= 1
+        refresh_page_view(st.session_state.page_idx)
         st.rerun()
 with header_cols[1]:
     doc_pct = int(round(doc_high / max(doc_total, 1) * 100))
@@ -674,6 +639,7 @@ with header_cols[2]:
         key="nav_next_main",
     ):
         st.session_state.page_idx += 1
+        refresh_page_view(st.session_state.page_idx)
         st.rerun()
 
 
@@ -709,6 +675,7 @@ if review_items:
                         cell["alternatives"] = [chosen]
                         cell["score"] = max(60, score)
                         mark_manual_edit(cell)
+                        refresh_page_view(page_idx)
                         st.toast(f"↔ Alternative übernommen: {alt}")
                         st.rerun()
 
@@ -728,7 +695,7 @@ if pending:
         )
         # Deduplicate by name (same name might appear in multiple cells)
         seen = set()
-        for p_idx, c_idx, r_idx, name in pending:
+        for _p_idx, name in pending:
             if name in seen:
                 continue
             seen.add(name)
@@ -744,40 +711,90 @@ if pending:
                     st.warning(msg)
                 st.session_state.pending_species = [
                     it for it in st.session_state.pending_species
-                    if it[3] != name
+                    if it[1] != name
                 ]
                 st.rerun()
             if cols[2].button("✗ Ignorieren", key=ignore_key):
                 st.session_state.pending_species = [
                     it for it in st.session_state.pending_species
-                    if it[3] != name
+                    if it[1] != name
                 ]
                 st.rerun()
 
 
-# ===== Two-column layout: sticky scan | editable table =====
-left, right = st.columns([5, 7], gap="medium")
+# ===== Fragments: scan panel | editable table =====
+# Each panel is its own st.fragment — interacting with one never redraws the
+# other (or the rest of the page). This is what keeps editing fast and stops
+# the old "jumps to top / loses the focused cell / closes fullscreen" pain.
 
-with left:
-    st.markdown("#### Original-Scan")
+
+@st.cache_resource(show_spinner=False)
+def _load_page_image(path: str) -> Image.Image:
+    return Image.open(path).copy()
+
+
+@st.fragment
+def render_scan_panel(page_idx: int, num_rows: int) -> None:
     page_path = st.session_state.all_pages[page_idx]
-    # Height-capped scroll container: scan + table share the screen, and the
-    # image's fullscreen lightbox (click to zoom, ✕/Esc to close) keeps
-    # working because no ancestor creates a stacking context.
-    with st.container(height=760):
-        st.image(page_path, use_container_width=True)
 
-with right:
+    head = st.columns([3, 2], vertical_alignment="bottom")
+    head[0].markdown("#### Original-Scan")
+    static_urls = st.session_state.get("page_static_urls") or []
+    url = static_urls[page_idx] if page_idx < len(static_urls) else None
+    if url:
+        head[1].markdown(
+            f'<div style="text-align:right;"><a href="{url}" target="_blank">'
+            f"🖼 In neuem Tab öffnen</a></div>",
+            unsafe_allow_html=True,
+        )
+
+    full_view = st.toggle(
+        "Ganze Seite",
+        value=False,
+        key=f"scan-full-{page_idx}",
+        help="Aus: Ausschnitt um die gewählte Tabellenzeile (Regler unten).",
+    )
+
+    if full_view or num_rows < 2:
+        with st.container(height=760):
+            st.image(page_path, use_container_width=True)
+        return
+
+    # Row focus: the printed forms have uniformly spaced rows, so a
+    # proportional band crop follows the table rows well enough to keep the
+    # scan aligned with where the user is editing.
+    row = st.slider(
+        "Zeile im Scan",
+        min_value=1,
+        max_value=num_rows,
+        key=f"scan-row-{page_idx}",
+        help="Zeigt den Scan-Ausschnitt um diese Tabellenzeile.",
+    )
+    img = _load_page_image(page_path)
+    w, h = img.size
+    table_top, table_bottom = 0.08, 0.985  # header block above, margin below
+    band = (table_bottom - table_top) / num_rows
+    half_window = band * 5  # ±5 Zeilen sichtbar
+    center = table_top + (row - 0.5) * band
+    y0 = max(0.0, center - half_window)
+    y1 = min(1.0, center + half_window)
+    crop = img.crop((0, int(y0 * h), w, int(y1 * h)))
+    st.image(crop, use_container_width=True)
+    st.caption(f"Ausschnitt um Zeile {row} (±5 Zeilen).")
+
+
+def _build_column_config(view: dict) -> dict:
     column_config = {}
-    for label in column_labels:
+    for label in view["labels"]:
         # Duplicate detections get a " (2)" suffix — configure by base label.
         base = label.split(" (")[0]
         if base == "Bague":
             column_config[label] = st.column_config.TextColumn(
                 label if label != base else "Bague No",
-                help="⚓ Anker-Zelle: Änderung rechnet die ganze Spalte neu. "
+                help="⚓ Anker-Zelle: Änderung rechnet die ganze Spalte neu "
+                "(Buchstaben-Präfix wie A90401 bleibt erhalten). "
                 "Andere Zellen: Werte werden als manuell markiert.",
-                max_chars=10,
+                max_chars=12,
             )
         elif base == "Espèce":
             column_config[label] = st.column_config.TextColumn(
@@ -785,14 +802,15 @@ with right:
                 help="Vogelart. Ein \" steht für 'gleich wie oben' (Ditto-Mark).",
             )
         elif base == "Sexe":
+            present = view["df"][label].tolist() if label in view["df"] else []
             column_config[label] = st.column_config.SelectboxColumn(
                 label,
-                options=SEXE_OPTIONS,
-                help="m=mâle/Männchen, w=Weibchen, f=femelle, (f)=unsicher, X=Markierung, ?=unbekannt",
+                options=catalog_options_with_values("sexe", present),
+                help="Auswahlliste ist erweiterbar: Sidebar → „Sexe-Auswahl“.",
             )
         elif base == "Age":
             column_config[label] = st.column_config.TextColumn(
-                label, help="Alter (z. B. ad., juv., vj.)."
+                label, help="Alter (auf diesen Formularen: Fd oder Fnd)."
             )
         elif base == "Jour/Mois":
             column_config[label] = st.column_config.TextColumn(
@@ -815,104 +833,82 @@ with right:
                 label, help="Nicht klassifizierte Spalte — Rohinhalt aus dem Scan."
             )
 
-    # Per-row confidence + alternatives flag.
-    row_confidence: list[tuple[str, int, bool]] = []  # (emoji, min_score, has_alt)
-    for row_offset in range(len(df)):
-        row_scores = []
-        has_alt = False
-        for col_i, _ in visible:
-            cell = _cell_meta(page, col_i, row_offset + 1)
-            if cell is None:
-                continue
-            score = int(cell.get("score", -1) or -1)
-            if score >= 0:
-                row_scores.append(score)
-            if cell.get("alternatives"):
-                has_alt = True
-        if not row_scores:
-            row_confidence.append(("⬜", -1, has_alt))
-        else:
-            ms = min(row_scores)
-            if ms >= 95:
-                row_confidence.append(("🟢", ms, has_alt))
-            elif ms >= 60:
-                row_confidence.append(("🟡", ms, has_alt))
-            else:
-                row_confidence.append(("🔴", ms, has_alt))
-
-    # ── Per-page filter ────────────────────────────────────────────────
-    show_only_review = st.session_state.get("show_only_review", False)
-    fcols = st.columns([3, 1])
-    fcols[0].caption(
-        f"💡 Tab/Enter springt zur nächsten Zelle. "
-        f"Spalte **📷** zeigt was OCR gesehen hat — perfekt zum Vergleichen."
-    )
-    show_only_review = fcols[1].toggle(
-        "Nur Review-Zellen", value=show_only_review, key="filter_review_toggle"
-    )
-    st.session_state.show_only_review = show_only_review
-
-    df_with_status = df.copy()
-    df_with_status.insert(0, "✓", [c[0] for c in row_confidence])
-    if any(c[2] for c in row_confidence):
-        df_with_status["⚠"] = ["↔" if c[2] else "" for c in row_confidence]
-
-    if show_only_review:
-        mask = [
-            (c[0] in ("🔴", "🟡") or c[2])
-            for c in row_confidence
-        ]
-        df_with_status = df_with_status[mask]
-        if df_with_status.empty:
-            st.success("🎉 Keine Zellen brauchen Review auf dieser Seite.")
-
     column_config["✓"] = st.column_config.TextColumn(
         "✓",
-        help="🟢 hoch  ·  🟡 mittel  ·  🔴 unsicher  ·  ⬜ leer",
+        help="🟢 hoch · 🟡 mittel · 🔴 unsicher · ⬜ leer — Schnappschuss, "
+        "🔄 berechnet neu",
         disabled=True,
         width="small",
     )
-    if "⚠" in df_with_status.columns:
-        column_config["⚠"] = st.column_config.TextColumn(
-            "⚠",
-            help="↔ in dieser Zeile gibt es eine Alternative — siehe Review-Banner oben",
-            disabled=True,
+    column_config["⚠"] = st.column_config.TextColumn(
+        "⚠",
+        help="↔ es gibt eine Alternative — siehe Review-Banner oben",
+        disabled=True,
+        width="small",
+    )
+    for label in view["labels"]:
+        img_key = f"📷 {label}"
+        column_config[img_key] = st.column_config.ImageColumn(
+            "📷",
+            help=f"Bild-Crop, das vom OCR für „{label}“ analysiert wurde.",
             width="small",
         )
+    return column_config
 
-    # Image columns are read-only previews of what OCR actually saw.
-    for label in column_labels:
-        img_key = f"📷 {label}"
-        if img_key in df_with_status.columns:
-            column_config[img_key] = st.column_config.ImageColumn(
-                "📷",
-                help=f"Bild-Crop, das vom OCR für „{label}“ analysiert wurde.",
-                width="small",
-            )
 
-    editor_key = f"editor-page-{page_idx}-{'review' if show_only_review else 'all'}"
-    edited_df = st.data_editor(
-        df_with_status,
-        column_config=column_config,
+@st.fragment
+def render_editor_panel(page_idx: int) -> None:
+    view = get_page_view(page_idx)
+    page = st.session_state.predictions[page_idx]
+
+    rebuild_stats = st.session_state.pop("_anchor_rebuild_toast", None)
+    if rebuild_stats:
+        st.toast(
+            f"🔄 Bague-Spalte aus Anker {rebuild_stats['anchor']} neu berechnet "
+            f"({rebuild_stats['filled']} Zellen)."
+        )
+
+    fcols = st.columns([5, 2, 1], vertical_alignment="center")
+    fcols[0].caption(
+        "💡 Tab/Enter wie in Excel · `\"` = Ditto · ✓/⚠ sind ein "
+        "Schnappschuss — 🔄 berechnet sie neu."
+    )
+    show_only_review = fcols[1].toggle(
+        "Nur Review-Zellen", key=f"filter-review-{page_idx}"
+    )
+    if fcols[2].button(
+        "🔄",
+        key=f"refresh-view-{page_idx}",
+        help="Statusspalten, Review-Banner und Fortschritt neu berechnen.",
+    ):
+        refresh_page_view(page_idx)
+        st.rerun()  # voller Rerun: auch Banner/Pills oben aktualisieren
+
+    df_display = view["df_status"]
+    if show_only_review:
+        mask = [(c[0] in ("🔴", "🟡") or c[2]) for c in view["row_conf"]]
+        df_display = df_display[pd.Series(mask, index=df_display.index)]
+        if df_display.empty:
+            st.success("🎉 Keine Zellen brauchen Review auf dieser Seite.")
+
+    # The on_change callback maps edited_rows positions through this index —
+    # it must always reflect the CURRENTLY displayed subset.
+    view["display_index"] = list(df_display.index)
+
+    editor_key = (
+        f"editor-p{page_idx}-v{view['version']}-{'r' if show_only_review else 'a'}"
+    )
+    st.data_editor(
+        df_display,
+        column_config=_build_column_config(view),
         use_container_width=True,
         hide_index=False,
         key=editor_key,
         num_rows="fixed",
-        height=min(900, 45 + 36 * len(df_with_status)),
+        height=min(900, 45 + 36 * max(len(df_display), 1)),
+        on_change=_on_editor_change,
+        args=(page_idx, editor_key),
     )
-
-    # Strip the read-only helper columns before syncing.
-    if not df_with_status.empty:
-        edited_data = edited_df[column_labels].copy()
-        df_clean = df.loc[df_with_status.index, column_labels].copy()
-        if not edited_data.equals(df_clean):
-            # When filtered, edited_data has gaps — merge into the full frame.
-            full_after_edit = df[column_labels].copy()
-            full_after_edit.loc[df_with_status.index] = edited_data
-            changed = sync_edits(page_idx, full_after_edit, visible)
-            if changed:
-                st.toast(f"✏️ {changed} Zelle(n) aktualisiert.")
-            st.rerun()
 
     # ── Einzel-Ergebnisse der Erkenner (Debug-/Vergleichsansicht) ──────
     _PREDICTION_SOURCES = [
@@ -922,7 +918,7 @@ with right:
         ("htr_vt", "HTR-VT"),
     ]
     model_rows = []
-    for col_i, label in visible:
+    for col_i, label in view["visible"]:
         cells = page["columns"][col_i].get("cells", [])
         for row_i, cell in enumerate(cells[1:], start=1):
             preds = cell.get("predictions") or {}
@@ -947,9 +943,38 @@ with right:
         ):
             st.caption(
                 "Rohe Vorhersage jedes Modells pro Zelle, vor Konsens/Fuzzy. "
-                "So siehst du, welches Modell was gelesen hat — Vergleich auf "
-                "Fixture-Daten: `python tools/compare_digit_backends.py`. "
+                "Vergleich auf Fixture-Daten: `python tools/compare_digit_backends.py`. "
                 "Backends umschalten: `DOCDIG_DIGIT_BACKENDS=yolo streamlit run src/app.py`."
             )
             model_df = pd.DataFrame(model_rows).sort_values(["Spalte", "#"])
             st.dataframe(model_df, use_container_width=True, hide_index=True)
+
+
+# ===== Layout: geteilt (Scan | Tabelle) oder nur Tabelle (2. Monitor) =====
+layout_mode = st.radio(
+    "Ansicht",
+    options=["Geteilt", "Nur Tabelle"],
+    horizontal=True,
+    key="layout-mode",
+    label_visibility="collapsed",
+    help="„Nur Tabelle“ + Scan im eigenen Browser-Tab = zwei Bildschirme.",
+)
+
+num_rows = len(get_page_view(page_idx)["df"])
+
+if layout_mode == "Nur Tabelle":
+    static_urls = st.session_state.get("page_static_urls") or []
+    url = static_urls[page_idx] if page_idx < len(static_urls) else None
+    if url:
+        st.markdown(
+            f'<a href="{url}" target="_blank">🖼 Scan (Seite {page_idx + 1}) '
+            f"in neuem Tab öffnen</a> — fürs Arbeiten mit zwei Bildschirmen.",
+            unsafe_allow_html=True,
+        )
+    render_editor_panel(page_idx)
+else:
+    left, right = st.columns([5, 7], gap="medium")
+    with left:
+        render_scan_panel(page_idx, num_rows)
+    with right:
+        render_editor_panel(page_idx)
