@@ -519,7 +519,10 @@ if not st.session_state.get("uploaded"):
         target = static_dir / f"page_{i + 1}{Path(page_file).suffix or '.jpg'}"
         try:
             shutil.copyfile(page_file, target)
-            static_urls.append(f"app/{target.as_posix()}")
+            # Streamlit serves ./static at <base>/static/ — verified: the
+            # "app/static/..." form from the docs 404s on a default setup.
+            # Relative href, so it also works behind a proxy base path.
+            static_urls.append(target.as_posix())
         except Exception:
             static_urls.append(None)
     st.session_state.page_static_urls = static_urls
