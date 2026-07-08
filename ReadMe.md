@@ -99,6 +99,29 @@ The Streamlit UI shows **every extracted column**: semantically tagged ones
 (Bague, Espèce, Sexe, Age, Jour/Mois, Heure, Aile, Poids) with their form
 label, anything the detector could not classify as "Spalte N".
 
+### Editor architecture (do not regress)
+
+Fast editing depends on three rules (see the docstring in `src/app.py`):
+
+1. The editor DataFrame is built **once per page** and cached in session
+   state — `st.data_editor` gets the same object every rerun, which is what
+   preserves scroll position and the focused cell.
+2. Edits flow through the widget's ``edited_rows`` delta in an `on_change`
+   callback (`libs/editing.py`) — **never** force a full rerun per edit.
+   Scan panel and editor are separate `st.fragment`s, so interactions in one
+   never redraw the other.
+3. Status columns (✓/⚠) are snapshots; the 🔄 button recomputes them.
+   Updating them per edit would reset the grid (Streamlit issue #10181).
+
+Bague anchor edits are the deliberate exception (full column rebuild, cache
+invalidated). Letter prefixes in ring numbers ("A90401") survive rebuilds.
+
+Two-monitor workflow: "Nur Tabelle" layout + "Scan in neuem Tab öffnen"
+(served via Streamlit static serving from `./static/pages/`). In split view
+the scan panel follows the table via the row-focus slider (proportional band
+crop). The Sexe dropdown options are user-editable (sidebar → Sexe-Auswahl,
+stored in `config/sexe_options.json`).
+
 ## Numeric ensemble
 
 Numbers appear in five columns (Bague, Aile, Poids, Heure, Jour/Mois) and up
