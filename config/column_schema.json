@@ -7,68 +7,168 @@
     "keywords: Fuzzy-Match gegen den OCR-Text der Kopfzelle (Fehllesungen ok).",
     "width_share: erwarteter Anteil der Spaltenbreite an der Gesamtbreite [min, max].",
     "models: dokumentiert, welche Erkenner diese Rolle verarbeiten (Dispatch",
-    "laeuft ueber die is_*-Flags, siehe src/libs/columns.py)."
+    "laeuft ueber die is_*-Flags, siehe src/libs/columns.py).",
+    "value_range: plausibler Zahlenbereich (Aile in mm, Poids in g) - Werte ausserhalb werden im Konsens abgewertet/markiert."
   ],
   "form": "Liste de baguement (A)",
   "columns": [
     {
       "role": "batch",
       "label": "Bague",
-      "keywords": ["bague", "bague no", "numero", "nummer", "ring"],
-      "width_share": [0.04, 0.14],
-      "models": ["DigitRecognizer (Sequenz + Tesseract/YOLO)"]
+      "keywords": [
+        "bague",
+        "bague no",
+        "numero",
+        "nummer",
+        "ring"
+      ],
+      "width_share": [
+        0.04,
+        0.14
+      ],
+      "models": [
+        "DigitRecognizer (Sequenz + Tesseract/YOLO)"
+      ]
     },
     {
       "role": "species",
       "label": "Espèce",
-      "keywords": ["espece", "espèce", "art", "vogelart"],
-      "width_share": [0.15, 0.38],
-      "models": ["HTR-VT", "TrOCR", "FuzzyMatchingBirdNames"]
+      "keywords": [
+        "espece",
+        "espèce",
+        "art",
+        "vogelart"
+      ],
+      "width_share": [
+        0.15,
+        0.38
+      ],
+      "models": [
+        "HTR-VT",
+        "TrOCR",
+        "FuzzyMatchingBirdNames"
+      ]
     },
     {
       "role": "sexe",
       "label": "Sexe",
-      "keywords": ["sexe", "d'sexe", "sex", "geschlecht"],
-      "width_share": [0.03, 0.11],
-      "models": ["SexeClassifier"]
+      "keywords": [
+        "sexe",
+        "d'sexe",
+        "sex",
+        "geschlecht"
+      ],
+      "width_share": [
+        0.03,
+        0.11
+      ],
+      "models": [
+        "SexeClassifier"
+      ]
     },
     {
       "role": "age",
       "label": "Age",
-      "keywords": ["age", "âge", "alter"],
-      "width_share": [0.05, 0.14],
-      "models": ["TrOCR", "FuzzyMatchingAge (Katalog)"]
+      "keywords": [
+        "age",
+        "âge",
+        "alter"
+      ],
+      "width_share": [
+        0.05,
+        0.14
+      ],
+      "models": [
+        "TrOCR",
+        "FuzzyMatchingAge (Katalog)"
+      ]
     },
     {
       "role": "jour_mois",
       "label": "Jour/Mois",
-      "keywords": ["jour mois", "jour", "mois", "datum", "tag monat"],
-      "width_share": [0.05, 0.15],
-      "models": ["DigitRecognizer", "TrOCR", "NumericConsensus"]
+      "keywords": [
+        "jour mois",
+        "jour",
+        "mois",
+        "datum",
+        "tag monat"
+      ],
+      "width_share": [
+        0.05,
+        0.15
+      ],
+      "models": [
+        "DigitRecognizer",
+        "TrOCR",
+        "NumericConsensus"
+      ]
     },
     {
       "role": "heure",
       "label": "Heure",
-      "keywords": ["heure", "uhrzeit", "zeit"],
-      "width_share": [0.03, 0.11],
-      "models": ["DigitRecognizer", "TrOCR", "NumericConsensus"]
+      "keywords": [
+        "heure",
+        "uhrzeit",
+        "zeit"
+      ],
+      "width_share": [
+        0.03,
+        0.11
+      ],
+      "models": [
+        "DigitRecognizer",
+        "TrOCR",
+        "NumericConsensus"
+      ]
     },
     {
       "role": "aile",
       "label": "Aile",
-      "keywords": ["aile", "alle", "aiie", "fluegel", "flügel"],
-      "width_share": [0.04, 0.13],
-      "models": ["DigitRecognizer", "TrOCR", "NumericConsensus"]
+      "keywords": [
+        "aile",
+        "alle",
+        "aiie",
+        "fluegel",
+        "flügel"
+      ],
+      "width_share": [
+        0.04,
+        0.13
+      ],
+      "models": [
+        "DigitRecognizer",
+        "TrOCR",
+        "NumericConsensus"
+      ],
+      "value_range": [
+        25,
+        140
+      ]
     },
     {
       "role": "poids",
       "label": "Poids",
-      "keywords": ["poids", "polds", "gewicht"],
-      "width_share": [0.03, 0.12],
-      "models": ["DigitRecognizer", "TrOCR", "NumericConsensus"]
+      "keywords": [
+        "poids",
+        "polds",
+        "gewicht"
+      ],
+      "width_share": [
+        0.03,
+        0.12
+      ],
+      "models": [
+        "DigitRecognizer",
+        "TrOCR",
+        "NumericConsensus"
+      ],
+      "value_range": [
+        3,
+        80
+      ]
     }
   ],
-  "min_assign_score": 0.20,
+  "min_assign_score": 0.2,
   "gap_column_penalty": 0.05,
   "gap_role_penalty": 0.25
 }

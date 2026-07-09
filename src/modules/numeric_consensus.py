@@ -28,7 +28,22 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from libs.columns import is_compound_column, is_numeric_column
+from libs.column_schema import ROLE_TO_FLAG, load_schema
 from .module_base import Module
+
+
+def _value_ranges_by_flag() -> dict:
+    """{is_*_column flag: (lo, hi)} for schema roles with a value_range."""
+    ranges = {}
+    try:
+        for col in load_schema().get("columns", []):
+            vr = col.get("value_range")
+            flag = ROLE_TO_FLAG.get(col.get("role"))
+            if vr and flag:
+                ranges[flag] = (float(vr[0]), float(vr[1]))
+    except Exception:
+        pass
+    return ranges
 
 
 _NUMERIC_RE = re.compile(r"-?\d+(?:[.,]\d+)?")
@@ -89,9 +104,13 @@ class NumericConsensus(Module):
     # Voting order doubles as the tie-break order.
     SOURCES = ("digit", "yolo", "trocr")
 
+    # Winner lies outside the column's plausible value range (schema):
+    IMPLAUSIBLE_SCORE = 30
+
     def __init__(self, debug: bool = False):
         super().__init__("numeric-consensus")
         self.debug = debug
+        self._value_ranges = _value_ranges_by_flag()
 
     def get_preconditions(self) -> List[str]:
         # Whatever ran last in the recognizer chain will do — we read every
@@ -138,6 +157,28 @@ class NumericConsensus(Module):
             source, _, display = votes[0]
             return display, self.SOLO_SCORES.get(source, 50), []
 
+        # Decimal reconciliation (decimal columns only): Tesseract and YOLO
+        # cannot see the decimal point — they read "10.5" as "105" and used
+        # to OUTVOTE TrOCR's correct "10.5" two to one. When values share the
+        # same digit sequence and exactly one dotted variant exists, they are
+        # the SAME reading — merge onto the dotted one.
+        if not compound:
+            dotted_by_digits: Dict[str, set] = {}
+            for _, key, display in votes:
+                if "." in display:
+                    dotted_by_digits.setdefault(
+                        _digits_key(display) or "", set()
+                    ).add(display)
+            merged_votes = []
+            for source, key, display in votes:
+                digits = _digits_key(display) or ""
+                dotted = dotted_by_digits.get(digits, set())
+                if "." not in display and len(dotted) == 1:
+                    display = next(iter(dotted))
+                    key = _normalise(display) or key
+                merged_votes.append((source, key, display))
+            votes = merged_votes
+
         # Tally by comparison key. Display value: the longest one in the
         # winning bucket (keeps "14:30" over "1430" for compound columns).
         buckets: Dict[str, List[Tuple[str, str]]] = {}
@@ -166,6 +207,42 @@ class NumericConsensus(Module):
         # Every voice disagrees — ranked[0] already prefers the best shape.
         return winner_display, self.DISAGREE_SCORE, alternatives
 
+    @staticmethod
+    def _in_range(value: str, value_range: Tuple[float, float]) -> bool:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return False
+        return value_range[0] <= number <= value_range[1]
+
+    def _apply_value_range(
+        self, column: dict, erkannt: str, score: int, alternatives: list
+    ) -> Tuple[str, int, list]:
+        """Plausibility arbitration (Aile in mm, Poids in g — from the schema).
+
+        Neighbour-column bleed produces values like '785' or '412' on cells
+        whose truth is 78 / 9.5. If the winner is outside the plausible range
+        but an alternative fits, the alternative wins (winner kept as
+        alternative); if nothing fits, the value stays but is flagged red.
+        """
+        value_range = None
+        for flag, vr in self._value_ranges.items():
+            if column.get(flag, False):
+                value_range = vr
+                break
+        if value_range is None or not erkannt:
+            return erkannt, score, alternatives
+
+        if self._in_range(erkannt, value_range):
+            return erkannt, score, alternatives
+
+        for alt in alternatives:
+            if self._in_range(alt, value_range):
+                rest = [a for a in alternatives if a != alt]
+                return alt, self.DISAGREE_SCORE, rest + [erkannt]
+
+        return erkannt, min(score, self.IMPLAUSIBLE_SCORE), alternatives
+
     def process(self, data: dict, config: dict):
         pages = self._resolve_pages(data)
         if pages is None:
@@ -191,6 +268,10 @@ class NumericConsensus(Module):
                     erkannt, score, alternatives = self._consensus(
                         predictions, compound=compound
                     )
+                    if not compound:
+                        erkannt, score, alternatives = self._apply_value_range(
+                            column, erkannt, score, alternatives
+                        )
                     if erkannt:
                         cell["erkannt"] = erkannt
                         cell["score"] = score

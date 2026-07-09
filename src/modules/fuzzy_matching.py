@@ -98,7 +98,17 @@ class FuzzyMatchingBirdNames(Module):
     DISAGREEMENT_PENALTY = 10
     MIN_SOLO_FLOOR = 30
 
-    def __init__(self, class_label_path: str = "./config/class_indices.json", score_threshold: int = 10):
+    # Below this fuzzy score the raw OCR text is kept (red, for review)
+    # instead of FORCING the nearest catalog species — measured on page 5 of
+    # the corpus: species missing from the catalog (Waldlaubsänger,
+    # Berglaubsänger) were silently snapped to wrong species at ~50-60.
+    DEFAULT_SCORE_THRESHOLD = 66
+
+    def __init__(
+        self,
+        class_label_path: str = "./config/class_indices.json",
+        score_threshold: int = DEFAULT_SCORE_THRESHOLD,
+    ):
         super().__init__("fuzzy-corrector-Species")
         self.class_label_path = class_label_path
         self.class_labels = _load_species_catalog(class_label_path)

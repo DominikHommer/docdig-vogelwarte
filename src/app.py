@@ -997,6 +997,7 @@ def render_editor_panel(page_idx: int) -> None:
         ("yolo", "YOLO"),
         ("trocr", "TrOCR"),
         ("htr_vt", "HTR-VT"),
+        ("sexe_cnn", "Sexe-CNN"),
     ]
     model_rows = []
     for col_i, label in view["visible"]:

@@ -50,12 +50,22 @@ def load_catalog(
     path: Optional[Path] = None,
     custom_path: Optional[Path] = None,
 ) -> List[str]:
-    """Return the sorted union of canonical + custom species names."""
+    """Return the sorted union of canonical + custom species names.
+
+    Names are NFC-normalised: the historical class_indices.json stores
+    umlauts decomposed (o + combining diaeresis), which made recognised
+    values compare unequal to visually identical NFC text ("Hausrötel" !=
+    "Hausrötel") in exports and downstream tools.
+    """
     default = _load_file(path or DEFAULT_CATALOG)
     custom = _load_file(custom_path or CUSTOM_CATALOG)
     merged = {**default, **custom}
     # Skip the historical "ditto mark" entry — it isn't a species.
-    names = [k for k in merged.keys() if k.strip() and k != '"']
+    names = {
+        unicodedata.normalize("NFC", k)
+        for k in merged.keys()
+        if k.strip() and k != '"'
+    }
     return sorted(names)
 
 

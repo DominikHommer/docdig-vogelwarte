@@ -225,6 +225,7 @@ class SexeClassifier(Module):
                         continue
 
                     # "none" == the bander left the cell empty; show it blank.
+                    cell.setdefault("predictions", {})["sexe_cnn"] = label
                     cell["erkannt"] = "" if label == "none" else label
                     cell["score"] = int(round(score * 100))
                     cell["skip_ocr"] = True

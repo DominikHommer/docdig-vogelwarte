@@ -94,9 +94,9 @@ def test_numeric_disagreement_prefers_clean_shape():
 
 
 def test_numeric_only_one_source():
-    column = _aile_column(("75", None), (None, "12"))
+    column = _aile_column(("75", None), (None, "62"))
     erk, scores = _run_numeric_consensus(column)
-    assert erk == ["75", "12"]
+    assert erk == ["75", "62"]
     # First cell -> digit-only (60), second -> trocr-only (50)
     assert scores == [60, 50]
 
@@ -172,11 +172,58 @@ def test_jour_mois_agreement_on_digit_sequence():
     assert scores == [NumericConsensus.ALL_AGREE]
 
 
-def test_decimal_column_does_not_use_digit_sequence_matching():
-    # On Aile "12.5" and "125" are different values — no false agreement.
-    column = _numeric_column({"digit": "125", "trocr": "12.5"})
+def test_decimal_reconciliation_dotted_reading_wins():
+    """Measured failure class on the corpus (page 5, Poids): truth 10.5,
+    TrOCR reads '10.5' but Tesseract+YOLO can't see the decimal point and
+    OUTVOTED it with '105'. Same digit sequence + exactly one dotted variant
+    = the same reading -> merge onto the dotted value."""
+    column = _numeric_column(
+        {"digit": "105", "yolo": "105", "trocr": "10.5"}, flag="is_poids_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["10.5"]
+    assert scores == [NumericConsensus.ALL_AGREE]
+
+
+def test_decimal_reconciliation_requires_same_digits():
+    # Different digit sequences stay separate readings.
+    column = _numeric_column({"digit": "125", "trocr": "13.5"})
     erk, scores = _run_numeric_consensus(column)
     assert scores == [NumericConsensus.DISAGREE_SCORE]
+
+
+# --- value-range plausibility (schema: Aile mm, Poids g) --------------------
+
+
+def test_out_of_range_winner_swaps_to_plausible_alternative():
+    """'785' (neighbour-bleed digit) outvotes '78' — but 785mm is no wing.
+    The in-range alternative must win, the implausible one becomes the
+    alternative."""
+    column = _numeric_column(
+        {"digit": "785", "yolo": "785", "trocr": "78"}, flag="is_alle_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["78"]
+    cell = column["cells"][1]
+    assert "785" in cell.get("alternatives", [])
+
+
+def test_out_of_range_without_alternative_is_flagged_red():
+    column = _numeric_column(
+        {"digit": "412", "yolo": "412", "trocr": "412"}, flag="is_poids_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["412"]  # kept — the user decides
+    assert scores[0] <= NumericConsensus.IMPLAUSIBLE_SCORE
+
+
+def test_in_range_values_keep_their_score():
+    column = _numeric_column(
+        {"digit": "68", "yolo": "68", "trocr": "68"}, flag="is_alle_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["68"]
+    assert scores == [NumericConsensus.ALL_AGREE]
 
 
 # ---------------------------------------------------------------------------
