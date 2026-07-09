@@ -437,36 +437,49 @@ with st.sidebar:
                 with st.popover("Liste anzeigen", use_container_width=True):
                     st.write(", ".join(catalog))
 
-        # ── Sexe-Auswahl verwalten ─────────────────────────────────────
-        with st.expander("⚥ Sexe-Auswahl", expanded=False):
-            sexe_options = catalog_load_options("sexe")
-            st.caption(
-                "Einträge der Sexe-Auswahlliste im Editor. Eigene Kürzel "
-                "wie „(m)?“ einfach ergänzen."
-            )
-            with st.form("add_sexe_option", clear_on_submit=True, border=False):
-                new_opt = st.text_input(
-                    "Neuen Eintrag hinzufügen",
-                    placeholder="z. B. (m)?",
-                    label_visibility="collapsed",
-                )
-                if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
-                    ok, msg = catalog_add_option("sexe", new_opt)
-                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
-                    if ok:
-                        refresh_page_view(st.session_state.get("page_idx", 0))
-            removable = [o for o in sexe_options if o]
-            if removable:
-                rm_cols = st.columns([3, 1])
-                to_remove = rm_cols[0].selectbox(
-                    "Eintrag entfernen", removable, label_visibility="collapsed"
-                )
-                if rm_cols[1].button("🗑", key="rm-sexe-option"):
-                    ok, msg = catalog_remove_option("sexe", to_remove)
-                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
-                    if ok:
-                        refresh_page_view(st.session_state.get("page_idx", 0))
-                        st.rerun()
+        # ── Auswahllisten (Sexe, Age) verwalten ────────────────────────
+        def _render_option_catalog(name: str, icon: str, title: str, hint: str):
+            with st.expander(f"{icon} {title}", expanded=False):
+                options = catalog_load_options(name)
+                st.caption(hint)
+                with st.form(f"add_{name}_option", clear_on_submit=True, border=False):
+                    new_opt = st.text_input(
+                        "Neuen Eintrag hinzufügen",
+                        placeholder="Neuer Eintrag …",
+                        label_visibility="collapsed",
+                    )
+                    if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
+                        ok, msg = catalog_add_option(name, new_opt)
+                        st.toast(f"{icon} {msg}") if ok else st.warning(msg)
+                        if ok:
+                            refresh_page_view(st.session_state.get("page_idx", 0))
+                removable = [o for o in options if o]
+                if removable:
+                    rm_cols = st.columns([3, 1])
+                    to_remove = rm_cols[0].selectbox(
+                        "Eintrag entfernen",
+                        removable,
+                        label_visibility="collapsed",
+                        key=f"rm-select-{name}",
+                    )
+                    if rm_cols[1].button("🗑", key=f"rm-{name}-option"):
+                        ok, msg = catalog_remove_option(name, to_remove)
+                        st.toast(f"{icon} {msg}") if ok else st.warning(msg)
+                        if ok:
+                            refresh_page_view(st.session_state.get("page_idx", 0))
+                            st.rerun()
+
+        _render_option_catalog(
+            "sexe", "⚥", "Sexe-Auswahl",
+            "Einträge der Sexe-Auswahlliste im Editor. Eigene Kürzel wie "
+            "„(m)?“ einfach ergänzen.",
+        )
+        _render_option_catalog(
+            "age", "🎂", "Age-Auswahl",
+            "Alterscodes für Auswahlliste UND Erkennung. Auf den "
+            "1972er-Formularen nur Fd/Fnd — weitere Codes (ad., juv., …) "
+            "hier ergänzen.",
+        )
 
         st.divider()
         st.markdown("##### Hilfe")
@@ -809,8 +822,11 @@ def _build_column_config(view: dict) -> dict:
                 help="Auswahlliste ist erweiterbar: Sidebar → „Sexe-Auswahl“.",
             )
         elif base == "Age":
-            column_config[label] = st.column_config.TextColumn(
-                label, help="Alter (auf diesen Formularen: Fd oder Fnd)."
+            present = view["df"][label].tolist() if label in view["df"] else []
+            column_config[label] = st.column_config.SelectboxColumn(
+                label,
+                options=catalog_options_with_values("age", present),
+                help="Alterscode. Auswahlliste erweiterbar: Sidebar → „Age-Auswahl“.",
             )
         elif base == "Jour/Mois":
             column_config[label] = st.column_config.TextColumn(

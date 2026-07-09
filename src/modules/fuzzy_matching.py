@@ -232,17 +232,25 @@ class FuzzyMatchingAge(Module):
 
     def __init__(
         self,
-        allowed_labels=DEFAULT_ALLOWED,
+        allowed_labels=None,
         class_label_path: str = None,
         score_threshold: int = 62,
     ):
         super().__init__("fuzzy-corrector-Age")
-        # Back-compat: an explicit label file overrides the built-in whitelist.
-        if class_label_path:
-            loaded = _load_class_labels(class_label_path)
-            self.class_labels = loaded or list(allowed_labels)
-        else:
+        # Priority: explicit labels > explicit label file > user-editable
+        # catalog (config/age_options.json via the sidebar) > built-in Fd/Fnd.
+        if allowed_labels is not None:
             self.class_labels = list(allowed_labels)
+        elif class_label_path:
+            loaded = _load_class_labels(class_label_path)
+            self.class_labels = loaded or list(self.DEFAULT_ALLOWED)
+        else:
+            try:
+                from libs.value_catalog import recognition_labels
+
+                self.class_labels = recognition_labels("age") or list(self.DEFAULT_ALLOWED)
+            except Exception:
+                self.class_labels = list(self.DEFAULT_ALLOWED)
         self.score_threshold = score_threshold
         # The closed-world guess only makes sense for the binary Fd/Fnd case.
         self._binary_fd_fnd = set(self.class_labels) == {"Fd", "Fnd"}
