@@ -39,6 +39,7 @@ Digit-Recognition/DIDA.zip
 M-W-Classification/dataset/
 FelixUpload/
 crops/
+config/column_schema_custom.json
 .claude/
 
 # Environments

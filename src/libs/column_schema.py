@@ -31,6 +31,9 @@ from rapidfuzz import utils as fuzz_utils
 
 
 DEFAULT_SCHEMA_PATH = Path("./config/column_schema.json")
+# User edits from the in-app schema editor land here (gitignored) — the
+# canonical default file above stays pristine; "Standard" deletes this file.
+CUSTOM_SCHEMA_PATH = Path("./config/column_schema_custom.json")
 
 ROLE_TO_FLAG = {
     "batch": "is_batch_column",
@@ -62,15 +65,103 @@ DEFAULT_SCHEMA = {
 
 
 def load_schema(path: Optional[Path] = None) -> dict:
-    target = Path(path) if path else DEFAULT_SCHEMA_PATH
-    if target.exists():
+    """User override first, then the canonical file, then embedded defaults."""
+    candidates = (
+        [Path(path)] if path else [CUSTOM_SCHEMA_PATH, DEFAULT_SCHEMA_PATH]
+    )
+    for target in candidates:
+        if not target.exists():
+            continue
         try:
             data = json.loads(target.read_text(encoding="utf-8"))
             if isinstance(data, dict) and data.get("columns"):
                 return data
         except Exception as e:
-            print(f"[column_schema] Konnte {target} nicht lesen ({e}) — nutze Defaults.")
+            print(f"[column_schema] Konnte {target} nicht lesen ({e}) — überspringe.")
     return DEFAULT_SCHEMA
+
+
+def save_schema(schema: dict, path: Optional[Path] = None) -> None:
+    target = Path(path) if path else CUSTOM_SCHEMA_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(schema, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def reset_schema() -> bool:
+    """Drop the user override; returns True when one existed."""
+    if CUSTOM_SCHEMA_PATH.exists():
+        CUSTOM_SCHEMA_PATH.unlink()
+        return True
+    return False
+
+
+# ── UI bridge: schema <-> editable rows ────────────────────────────────
+# The app shows the schema as a small editable table BEFORE processing.
+# Rows carry: position, label (info), keywords, width range, active flag.
+
+
+def schema_to_rows(schema: dict) -> List[dict]:
+    rows = []
+    for pos, col in enumerate(schema.get("columns", []), start=1):
+        width = col.get("width_share", [0.0, 1.0])
+        rows.append(
+            {
+                "Pos": pos,
+                "Spalte": col.get("label", col.get("role", "?")),
+                "Aktiv": bool(col.get("enabled", True)),
+                "Header-Stichwörter": ", ".join(col.get("keywords", [])),
+                "Breite min %": round(float(width[0]) * 100, 1),
+                "Breite max %": round(float(width[1]) * 100, 1),
+                "_role": col.get("role", ""),
+            }
+        )
+    return rows
+
+
+def rows_to_schema(rows: Sequence[dict], base_schema: Optional[dict] = None) -> dict:
+    """Rebuild the schema from edited rows (sorted by Pos).
+
+    Rows map back onto the base schema's roles via the hidden ``_role`` key —
+    only order, keywords, width range and the active flag are user-editable.
+    Invalid numbers fall back to the base values.
+    """
+    base = base_schema or load_schema()
+    base_by_role = {c["role"]: c for c in base.get("columns", [])}
+
+    columns = []
+    for row in sorted(rows, key=lambda r: r.get("Pos") or 0):
+        role = row.get("_role", "")
+        base_col = base_by_role.get(role)
+        if base_col is None:
+            continue
+        keywords = [
+            k.strip()
+            for k in str(row.get("Header-Stichwörter", "")).split(",")
+            if k.strip()
+        ] or list(base_col.get("keywords", []))
+        try:
+            lo = max(0.0, float(row.get("Breite min %", 0)) / 100.0)
+            hi = min(1.0, float(row.get("Breite max %", 100)) / 100.0)
+            if hi <= lo:
+                raise ValueError
+        except (TypeError, ValueError):
+            lo, hi = base_col.get("width_share", [0.0, 1.0])
+
+        new_col = dict(base_col)
+        new_col["keywords"] = keywords
+        new_col["width_share"] = [lo, hi]
+        new_col["enabled"] = bool(row.get("Aktiv", True))
+        columns.append(new_col)
+
+    schema = dict(base)
+    schema["columns"] = columns
+    return schema
+
+
+def _active_columns(schema: dict) -> List[dict]:
+    return [c for c in schema.get("columns", []) if c.get("enabled", True)]
 
 
 def keyword_score(header_text: str, keywords: Sequence[str]) -> float:
@@ -138,7 +229,7 @@ def assign_roles(
     not extracted on this scan).
     """
     schema = schema or load_schema()
-    roles = schema["columns"]
+    roles = _active_columns(schema)
     min_score = float(schema.get("min_assign_score", 0.30))
     gap_col = float(schema.get("gap_column_penalty", 0.05))
     gap_role = float(schema.get("gap_role_penalty", 0.25))

@@ -50,6 +50,13 @@ from modules.trocr import TrOCR
 from modules.fuzzy_matching import FuzzyMatchingBirdNames, FuzzyMatchingAge
 from modules.numeric_consensus import NumericConsensus
 from libs.bague_sequence import mark_manual_edit
+from libs.column_schema import (
+    load_schema,
+    reset_schema,
+    rows_to_schema,
+    save_schema,
+    schema_to_rows,
+)
 from libs.editing import apply_editor_deltas
 from libs.table_view import (
     build_csv_bytes,
@@ -503,6 +510,62 @@ with st.sidebar:
     render_nextcloud_login()
 
 
+def render_schema_editor():
+    """Spalten vordefinieren — BEFORE processing.
+
+    Edits are saved to config/column_schema.json; the pipeline reads the
+    file when '🔍 Alle Seiten verarbeiten' is clicked, so changes made here
+    take effect for the next run.
+    """
+    with st.expander("🧩 Spalten-Layout des Formulars (vordefiniert)", expanded=False):
+        st.caption(
+            "So erwartet die Erkennung die Spalten — in dieser Reihenfolge. "
+            "**Pos** ändern zum Umsortieren, **Aktiv** abwählen wenn das "
+            "Formular eine Spalte nicht hat, **Stichwörter** = Begriffe der "
+            "gedruckten Kopfzeile (Kommas trennen). Breiten in % der "
+            "Tabellenbreite. Gilt ab der nächsten Verarbeitung."
+        )
+        schema = load_schema()
+        rows = schema_to_rows(schema)
+
+        edited = st.data_editor(
+            pd.DataFrame(rows).drop(columns=["_role"]),
+            key="schema-editor",
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "Pos": st.column_config.NumberColumn(
+                    "Pos", min_value=1, max_value=len(rows), step=1, width="small"
+                ),
+                "Spalte": st.column_config.TextColumn("Spalte", disabled=True),
+                "Aktiv": st.column_config.CheckboxColumn("Aktiv", width="small"),
+                "Header-Stichwörter": st.column_config.TextColumn(
+                    "Header-Stichwörter (Komma-getrennt)"
+                ),
+                "Breite min %": st.column_config.NumberColumn(
+                    "Breite min %", min_value=0.0, max_value=100.0, width="small"
+                ),
+                "Breite max %": st.column_config.NumberColumn(
+                    "Breite max %", min_value=0.0, max_value=100.0, width="small"
+                ),
+            },
+        )
+
+        cols = st.columns([1, 1, 3])
+        if cols[0].button("💾 Speichern", key="schema-save", type="primary"):
+            merged = edited.copy()
+            merged["_role"] = [r["_role"] for r in rows]
+            new_schema = rows_to_schema(merged.to_dict("records"), base_schema=schema)
+            save_schema(new_schema)
+            st.toast("🧩 Spalten-Layout gespeichert — gilt ab der nächsten Verarbeitung.")
+            st.rerun()
+        if cols[1].button("↩︎ Standard", key="schema-reset"):
+            reset_schema()
+            st.toast("🧩 Auf Standard-Layout zurückgesetzt.")
+            st.rerun()
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Main: upload OR editor
 # ──────────────────────────────────────────────────────────────────────
@@ -513,6 +576,7 @@ if not st.session_state.get("uploaded"):
         "erkennt Spalten und Werte, und du kannst sie korrigieren bevor du sie als CSV speicherst."
     )
     uploaded = st.file_uploader("Beringungsliste (PDF)", type="pdf", label_visibility="collapsed")
+    render_schema_editor()
     if not uploaded:
         st.stop()
 
@@ -555,6 +619,7 @@ if not st.session_state.get("uploaded"):
 # Predictions not yet built — show "process" button.
 if not st.session_state.get("processed"):
     st.markdown("## 📄 Vorschau")
+    render_schema_editor()
     pdf_viewer(st.session_state.pdf_path, height=700)
     if st.button(
         "🔍 Alle Seiten verarbeiten",
