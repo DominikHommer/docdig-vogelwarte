@@ -19,7 +19,17 @@ CONFIG_DIR = Path("./config")
 # otherwise the Selectbox renders ditto cells as missing values).
 DEFAULTS = {
     "sexe": ["", "m", "w", "f", "(m)", "(w)", "(f)", "m?", "w?", "f?", "?", "X", '"'],
+    # Auf den 1972er-Formularen kommen nur Fd/Fnd vor; weitere Alterscodes
+    # (ad., juv., vj., ...) können über die Sidebar ergänzt werden und
+    # fließen dann auch in die Erkennung (FuzzyMatchingAge) ein.
+    "age": ["", "Fd", "Fnd", '"'],
 }
+
+
+def recognition_labels(name: str, path: Optional[Path] = None) -> List[str]:
+    """Catalog entries that are real values (no empty entry, no ditto mark) —
+    what a recognizer may snap onto."""
+    return [o for o in load_options(name, path) if o and o != '"']
 
 
 def _path(name: str, path: Optional[Path] = None) -> Path:

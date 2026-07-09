@@ -50,6 +50,13 @@ from modules.trocr import TrOCR
 from modules.fuzzy_matching import FuzzyMatchingBirdNames, FuzzyMatchingAge
 from modules.numeric_consensus import NumericConsensus
 from libs.bague_sequence import mark_manual_edit
+from libs.column_schema import (
+    load_schema,
+    reset_schema,
+    rows_to_schema,
+    save_schema,
+    schema_to_rows,
+)
 from libs.editing import apply_editor_deltas
 from libs.table_view import (
     build_csv_bytes,
@@ -437,36 +444,49 @@ with st.sidebar:
                 with st.popover("Liste anzeigen", use_container_width=True):
                     st.write(", ".join(catalog))
 
-        # ── Sexe-Auswahl verwalten ─────────────────────────────────────
-        with st.expander("⚥ Sexe-Auswahl", expanded=False):
-            sexe_options = catalog_load_options("sexe")
-            st.caption(
-                "Einträge der Sexe-Auswahlliste im Editor. Eigene Kürzel "
-                "wie „(m)?“ einfach ergänzen."
-            )
-            with st.form("add_sexe_option", clear_on_submit=True, border=False):
-                new_opt = st.text_input(
-                    "Neuen Eintrag hinzufügen",
-                    placeholder="z. B. (m)?",
-                    label_visibility="collapsed",
-                )
-                if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
-                    ok, msg = catalog_add_option("sexe", new_opt)
-                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
-                    if ok:
-                        refresh_page_view(st.session_state.get("page_idx", 0))
-            removable = [o for o in sexe_options if o]
-            if removable:
-                rm_cols = st.columns([3, 1])
-                to_remove = rm_cols[0].selectbox(
-                    "Eintrag entfernen", removable, label_visibility="collapsed"
-                )
-                if rm_cols[1].button("🗑", key="rm-sexe-option"):
-                    ok, msg = catalog_remove_option("sexe", to_remove)
-                    st.toast(f"⚥ {msg}") if ok else st.warning(msg)
-                    if ok:
-                        refresh_page_view(st.session_state.get("page_idx", 0))
-                        st.rerun()
+        # ── Auswahllisten (Sexe, Age) verwalten ────────────────────────
+        def _render_option_catalog(name: str, icon: str, title: str, hint: str):
+            with st.expander(f"{icon} {title}", expanded=False):
+                options = catalog_load_options(name)
+                st.caption(hint)
+                with st.form(f"add_{name}_option", clear_on_submit=True, border=False):
+                    new_opt = st.text_input(
+                        "Neuen Eintrag hinzufügen",
+                        placeholder="Neuer Eintrag …",
+                        label_visibility="collapsed",
+                    )
+                    if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
+                        ok, msg = catalog_add_option(name, new_opt)
+                        st.toast(f"{icon} {msg}") if ok else st.warning(msg)
+                        if ok:
+                            refresh_page_view(st.session_state.get("page_idx", 0))
+                removable = [o for o in options if o]
+                if removable:
+                    rm_cols = st.columns([3, 1])
+                    to_remove = rm_cols[0].selectbox(
+                        "Eintrag entfernen",
+                        removable,
+                        label_visibility="collapsed",
+                        key=f"rm-select-{name}",
+                    )
+                    if rm_cols[1].button("🗑", key=f"rm-{name}-option"):
+                        ok, msg = catalog_remove_option(name, to_remove)
+                        st.toast(f"{icon} {msg}") if ok else st.warning(msg)
+                        if ok:
+                            refresh_page_view(st.session_state.get("page_idx", 0))
+                            st.rerun()
+
+        _render_option_catalog(
+            "sexe", "⚥", "Sexe-Auswahl",
+            "Einträge der Sexe-Auswahlliste im Editor. Eigene Kürzel wie "
+            "„(m)?“ einfach ergänzen.",
+        )
+        _render_option_catalog(
+            "age", "🎂", "Age-Auswahl",
+            "Alterscodes für Auswahlliste UND Erkennung. Auf den "
+            "1972er-Formularen nur Fd/Fnd — weitere Codes (ad., juv., …) "
+            "hier ergänzen.",
+        )
 
         st.divider()
         st.markdown("##### Hilfe")
@@ -490,6 +510,62 @@ with st.sidebar:
     render_nextcloud_login()
 
 
+def render_schema_editor():
+    """Spalten vordefinieren — BEFORE processing.
+
+    Edits are saved to config/column_schema.json; the pipeline reads the
+    file when '🔍 Alle Seiten verarbeiten' is clicked, so changes made here
+    take effect for the next run.
+    """
+    with st.expander("🧩 Spalten-Layout des Formulars (vordefiniert)", expanded=False):
+        st.caption(
+            "So erwartet die Erkennung die Spalten — in dieser Reihenfolge. "
+            "**Pos** ändern zum Umsortieren, **Aktiv** abwählen wenn das "
+            "Formular eine Spalte nicht hat, **Stichwörter** = Begriffe der "
+            "gedruckten Kopfzeile (Kommas trennen). Breiten in % der "
+            "Tabellenbreite. Gilt ab der nächsten Verarbeitung."
+        )
+        schema = load_schema()
+        rows = schema_to_rows(schema)
+
+        edited = st.data_editor(
+            pd.DataFrame(rows).drop(columns=["_role"]),
+            key="schema-editor",
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "Pos": st.column_config.NumberColumn(
+                    "Pos", min_value=1, max_value=len(rows), step=1, width="small"
+                ),
+                "Spalte": st.column_config.TextColumn("Spalte", disabled=True),
+                "Aktiv": st.column_config.CheckboxColumn("Aktiv", width="small"),
+                "Header-Stichwörter": st.column_config.TextColumn(
+                    "Header-Stichwörter (Komma-getrennt)"
+                ),
+                "Breite min %": st.column_config.NumberColumn(
+                    "Breite min %", min_value=0.0, max_value=100.0, width="small"
+                ),
+                "Breite max %": st.column_config.NumberColumn(
+                    "Breite max %", min_value=0.0, max_value=100.0, width="small"
+                ),
+            },
+        )
+
+        cols = st.columns([1, 1, 3])
+        if cols[0].button("💾 Speichern", key="schema-save", type="primary"):
+            merged = edited.copy()
+            merged["_role"] = [r["_role"] for r in rows]
+            new_schema = rows_to_schema(merged.to_dict("records"), base_schema=schema)
+            save_schema(new_schema)
+            st.toast("🧩 Spalten-Layout gespeichert — gilt ab der nächsten Verarbeitung.")
+            st.rerun()
+        if cols[1].button("↩︎ Standard", key="schema-reset"):
+            reset_schema()
+            st.toast("🧩 Auf Standard-Layout zurückgesetzt.")
+            st.rerun()
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Main: upload OR editor
 # ──────────────────────────────────────────────────────────────────────
@@ -500,6 +576,7 @@ if not st.session_state.get("uploaded"):
         "erkennt Spalten und Werte, und du kannst sie korrigieren bevor du sie als CSV speicherst."
     )
     uploaded = st.file_uploader("Beringungsliste (PDF)", type="pdf", label_visibility="collapsed")
+    render_schema_editor()
     if not uploaded:
         st.stop()
 
@@ -542,6 +619,7 @@ if not st.session_state.get("uploaded"):
 # Predictions not yet built — show "process" button.
 if not st.session_state.get("processed"):
     st.markdown("## 📄 Vorschau")
+    render_schema_editor()
     pdf_viewer(st.session_state.pdf_path, height=700)
     if st.button(
         "🔍 Alle Seiten verarbeiten",
@@ -809,8 +887,11 @@ def _build_column_config(view: dict) -> dict:
                 help="Auswahlliste ist erweiterbar: Sidebar → „Sexe-Auswahl“.",
             )
         elif base == "Age":
-            column_config[label] = st.column_config.TextColumn(
-                label, help="Alter (auf diesen Formularen: Fd oder Fnd)."
+            present = view["df"][label].tolist() if label in view["df"] else []
+            column_config[label] = st.column_config.SelectboxColumn(
+                label,
+                options=catalog_options_with_values("age", present),
+                help="Alterscode. Auswahlliste erweiterbar: Sidebar → „Age-Auswahl“.",
             )
         elif base == "Jour/Mois":
             column_config[label] = st.column_config.TextColumn(
