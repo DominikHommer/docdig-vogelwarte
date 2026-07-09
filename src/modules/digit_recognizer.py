@@ -333,12 +333,17 @@ class DigitRecognizer(Module):
         return max(candidates, key=cls._plausibility)
 
     def _read_full_number(self, image) -> str:
-        """First data cell: handwritten prefix + printed suffix. Goal: 4–7 digits."""
-        # Tesseract (psm 7 = single line), CRNN and YOLO all get a vote.
+        """Anchor scan for the bague column — Tesseract + CRNN, NO YOLO.
+
+        This runs on every bague cell only to locate the one multi-digit
+        anchor; running YOLO here too dominated the runtime for no gain (the
+        suffix cells are single printed digits Tesseract reads fine, and the
+        handwritten anchor falls back to the header parse / user anyway).
+        The numeric columns still get YOLO as a separate voice.
+        """
         return self._pick_most_plausible(
             self._tesseract_digits(image, psm=7),
             self._keras_predict(image),
-            self._yolo_predict(image),
         )
 
     def _find_anchor(self, per_cell_full: List[str]) -> Tuple[Optional[int], str]:
@@ -408,10 +413,13 @@ class DigitRecognizer(Module):
         return candidates[0]
 
     def _read_single_digit(self, image) -> str:
-        """Subsequent cells: should be a single printed digit."""
-        # Try multiple PSMs — different cells respond to different layouts
-        # after preprocessing.
-        for psm in (10, 13, 8, 7):
+        """Subsequent cells: should be a single printed digit.
+
+        psm 10 (single character) then 7 (single line) cover almost every
+        cell; the extra PSMs 13/8 rarely added a hit but cost a full
+        Tesseract call each, so they were dropped for speed.
+        """
+        for psm in (10, 7):
             digits = self._tesseract_digits(image, psm=psm)
             if digits:
                 return digits[-1]

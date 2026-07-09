@@ -142,7 +142,27 @@ st.markdown(
 # ──────────────────────────────────────────────────────────────────────
 # Pipeline construction (lazy-loaded on first run)
 # ──────────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def _recognizer_models():
+    """Load the heavy recognizers ONCE per server process and reuse them
+    across files/reruns. Without this every '🔍 Verarbeiten' reloaded TATR,
+    HTR-VT (408 MB), TrOCR, YOLO and two Keras CNNs from disk. The modules
+    hold no per-run state (they read/write the passed data dict), so sharing
+    the instances is safe. Fuzzy/consensus stages are cheap — fresh each run
+    so catalog edits take effect immediately."""
+    _digit_backends = os.environ.get("DOCDIG_DIGIT_BACKENDS", "").strip()
+    return {
+        "htr": HtrVtRecognizer(),
+        "digit": DigitRecognizer(
+            backends=tuple(_digit_backends.split(",")) if _digit_backends else None
+        ),
+        "sexe": SexeClassifier(),
+        "trocr": TrOCR(),
+    }
+
+
 def build_page_pipeline(page_paths):
+    models = _recognizer_models()
     pipeline = CVPipeline(input_data={"pdf-converter": page_paths})
     pipeline.add_stage(TableRotator(debug=False))
     pipeline.add_stage(TatrExtractor(debug=False))
@@ -151,21 +171,14 @@ def build_page_pipeline(page_paths):
     pipeline.add_stage(DetectColumns())
     pipeline.add_stage(CellFormatter())
     pipeline.add_stage(QuotationMarkDetector())
-    # Specialised recognisers per column type.
-    pipeline.add_stage(HtrVtRecognizer())   # Espèce + Age (Fd/Fnd)
-    # DOCDIG_DIGIT_BACKENDS steuert die Ziffern-Stimmen, z. B.
-    #   DOCDIG_DIGIT_BACKENDS=yolo streamlit run src/app.py   (nur YOLO)
-    #   DOCDIG_DIGIT_BACKENDS=tesseract,keras                 (ohne YOLO)
-    _digit_backends = os.environ.get("DOCDIG_DIGIT_BACKENDS", "").strip()
-    pipeline.add_stage(
-        DigitRecognizer(
-            backends=tuple(_digit_backends.split(",")) if _digit_backends else None
-        )
-    )   # Bague (seq) + alle Zahlen-Spalten (CRNN/Tesseract + YOLO)
-    pipeline.add_stage(SexeClassifier())    # Sexe (or no-op without model)
-    pipeline.add_stage(TrOCR())             # Second opinion für Espèce + Zahlen-Spalten
-    pipeline.add_stage(FuzzyMatchingBirdNames())  # dual-source consensus for Espèce
-    pipeline.add_stage(NumericConsensus())  # 3-Stimmen-Voting für Aile/Poids/Heure/Jour-Mois
+    # Cached specialised recognisers (loaded once, see _recognizer_models).
+    pipeline.add_stage(models["htr"])       # Espèce + Age (Fd/Fnd)
+    pipeline.add_stage(models["digit"])     # Bague (seq) + Zahlen-Spalten
+    pipeline.add_stage(models["sexe"])      # Sexe (or no-op without model)
+    pipeline.add_stage(models["trocr"])     # Second opinion Espèce + Zahlen
+    # Cheap post-processing — fresh each run so catalog edits apply at once.
+    pipeline.add_stage(FuzzyMatchingBirdNames())
+    pipeline.add_stage(NumericConsensus())
     pipeline.add_stage(FuzzyMatchingAge())
     return pipeline
 

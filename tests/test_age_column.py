@@ -62,7 +62,9 @@ def test_age_column_belongs_to_trocr_not_htr():
 def test_trocr_writes_age_predictions(monkeypatch):
     trocr = TrOCR()
     monkeypatch.setattr(TrOCR, "_ensure_loaded", lambda self: True)
-    monkeypatch.setattr(TrOCR, "_recognise", lambda self, img: "Tund")
+    monkeypatch.setattr(
+        TrOCR, "_recognise_batch", lambda self, imgs: ["Tund"] * len(imgs)
+    )
 
     column = _age_column(_age_cell(), _age_cell(is_blank=True, skip_ocr=True))
     pages = [{"columns": [column]}]

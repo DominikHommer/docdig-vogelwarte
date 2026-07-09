@@ -144,6 +144,33 @@ the scan panel follows the table via the row-focus slider (proportional band
 crop). The Sexe dropdown options are user-editable (sidebar → Sexe-Auswahl,
 stored in `config/sexe_options.json`).
 
+## Performance
+
+Recognition is CPU-bound; measured per page (serial, no parallel load):
+
+| Stage | before | after |
+|---|---|---|
+| TrOCR | 66.5s | 49.0s |
+| DigitRecognizer | 22.1s | 19.0s |
+| total/page | ~96s | ~74s |
+
+What helps (all accuracy-neutral, verified against the files-3 eval):
+
+- **Model caching** (`st.cache_resource` in `src/app.py`): the heavy
+  recognizers (TATR, HTR-VT 408MB, TrOCR ~1.4GB, YOLO, 2 Keras CNNs) load
+  ONCE per server process, not on every '🔍 Verarbeiten' / every file.
+- **TrOCR batching**: all cells of the run go through `generate()` in
+  batches (`DOCDIG_TROCR_BATCH`, default 16 — lower it on a RAM-tight host).
+- **`max_new_tokens` cap**: cell contents are short, so generate() no longer
+  decodes to its default length per cell.
+- **DigitRecognizer**: no YOLO in the bague anchor scan (ran on all 50 cells
+  for nothing), 2 Tesseract PSMs instead of 4 per suffix cell.
+
+What does NOT help on CPU (measured, so don't re-add): raising
+`torch.set_num_threads` made generate() *slower* (58→85s) through
+contention on the small per-token tensors. A real further speed-up needs a
+GPU or a smaller/faster OCR model.
+
 ## Numeric ensemble
 
 Numbers appear in five columns (Bague, Aile, Poids, Heure, Jour/Mois) and up

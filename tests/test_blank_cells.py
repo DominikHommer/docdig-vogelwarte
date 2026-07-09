@@ -119,7 +119,9 @@ def test_htr_vt_skips_blank_cells(monkeypatch):
 def test_trocr_skips_blank_cells(monkeypatch):
     trocr = TrOCR()
     monkeypatch.setattr(TrOCR, "_ensure_loaded", lambda self: True)
-    monkeypatch.setattr(TrOCR, "_recognise", lambda self, img: "Halluzination")
+    monkeypatch.setattr(
+        TrOCR, "_recognise_batch", lambda self, imgs: ["Halluzination"] * len(imgs)
+    )
 
     column = {"cells": [_blank_cell(), _blank_cell()], "is_alle_column": True}
     trocr.process({"cell-formatter": _page_with(column)}, {})

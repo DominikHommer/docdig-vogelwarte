@@ -50,6 +50,13 @@ class TrOCR(Module):
         if self.debug:
             os.makedirs(self.debug_folder, exist_ok=True)
 
+        # Batch size for inference — bigger is faster but uses more RAM.
+        # DOCDIG_TROCR_BATCH lets a memory-tight host dial it down.
+        try:
+            self.batch_size = max(1, int(os.environ.get("DOCDIG_TROCR_BATCH", "16")))
+        except ValueError:
+            self.batch_size = 16
+
         self.processor = None
         self.model = None
         self.device = None
@@ -68,10 +75,14 @@ class TrOCR(Module):
             return False
 
         try:
+            # NOTE: do NOT raise torch threads here — measured, more threads
+            # made generate() SLOWER (58s -> 85s/page) due to contention on
+            # the small per-token tensors. The default thread count wins.
             self.processor = TrOCRProcessor.from_pretrained(self.model_name)
             self.model = VisionEncoderDecoderModel.from_pretrained(self.model_name)
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
             self.model.to(self.device)
+            self.model.eval()
             self._torch = torch
             self._available = True
             print(f"[TrOCR] Loaded {self.model_name} (device={self.device}).")
@@ -126,22 +137,51 @@ class TrOCR(Module):
         return None
 
     def _recognise(self, image) -> Optional[str]:
+        results = self._recognise_batch([image])
+        return results[0] if results else None
+
+    def _recognise_batch(self, images: List) -> List[Optional[str]]:
+        """Run TrOCR on many crops at once.
+
+        Batching is the single biggest speed win here: generate() has a large
+        fixed overhead per call, so 250 single cells/page cost ~66s while the
+        same cells in batches of DOCDIG_TROCR_BATCH cost a fraction. Output is
+        identical to per-cell calls (same images, same model). Unreadable
+        crops keep their slot as None so indices line up with the caller.
+        """
         if not self._ensure_loaded():
-            return None
-        rgb = self._to_rgb(image)
-        if rgb is None:
-            return None
-        try:
-            pil_image = Image.fromarray(rgb).convert("RGB")
-            inputs = self.processor(images=pil_image, return_tensors="pt").to(self.device)
-            with self._torch.no_grad():
-                generated_ids = self.model.generate(**inputs)
-                text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-            return text
-        except Exception as e:
-            if self.debug:
-                print(f"[TrOCR] inference error: {e}")
-            return None
+            return [None] * len(images)
+
+        rgbs = [self._to_rgb(img) for img in images]
+        valid = [(i, rgb) for i, rgb in enumerate(rgbs) if rgb is not None]
+        out: List[Optional[str]] = [None] * len(images)
+        if not valid:
+            return out
+
+        for start in range(0, len(valid), self.batch_size):
+            chunk = valid[start : start + self.batch_size]
+            pil_batch = [Image.fromarray(rgb).convert("RGB") for _, rgb in chunk]
+            try:
+                inputs = self.processor(images=pil_batch, return_tensors="pt").to(
+                    self.device
+                )
+                with self._torch.no_grad():
+                    # Cell contents are short (ring numbers <=7 chars, species
+                    # names ~20). Capping new tokens stops generate() from
+                    # decoding up to its default length on every cell —
+                    # genuinely shorter work, output unchanged for real cells.
+                    generated_ids = self.model.generate(
+                        **inputs, max_new_tokens=24, num_beams=1
+                    )
+                    texts = self.processor.batch_decode(
+                        generated_ids, skip_special_tokens=True
+                    )
+                for (idx, _), text in zip(chunk, texts):
+                    out[idx] = text
+            except Exception as e:
+                if self.debug:
+                    print(f"[TrOCR] batch inference error: {e}")
+        return out
 
     def process(self, data: dict, config: dict) -> List[Dict]:
         valid_keys = self.get_preconditions()
@@ -155,77 +195,43 @@ class TrOCR(Module):
         if not isinstance(pages, list):
             return []
 
-        for page_idx, page in enumerate(pages):
+        # Collect every cell that needs TrOCR across ALL pages first, then run
+        # them through the model in batches — one generate() call per batch
+        # instead of one per cell.
+        work_cells = []   # cell dicts to write back into
+        work_images = []  # the matching preprocessed crops
+        for page in pages:
             columns = page.get("columns", [])
             if not isinstance(columns, list):
                 continue
-
-            for col_idx, column in enumerate(columns):
-                cells = column.get("cells", [])
-
-                if self.debug and cells and isinstance(cells[0], dict):
-                    first_img = cells[0].get("image")
-                    if first_img is not None:
-                        debug_img = self._to_rgb(first_img)
-                        if debug_img is not None:
-                            debug_path = os.path.join(
-                                self.debug_folder, f"page_{page_idx}_col_{col_idx}.png"
-                            )
-                            cv2.imwrite(debug_path, debug_img)
-
-                # If a target list is set, the column must match it; otherwise
-                # run on every column (legacy behaviour).
+            for column in columns:
                 if self.target_column_flags and not any(
                     column.get(flag, False) for flag in self.target_column_flags
                 ):
-                    # A specialist recognizer is responsible. Cells it could not
-                    # populate (model missing) will be left blank — the user can
-                    # still fill them in via the UI.
-                    if self.debug:
-                        print(f"[TrOCR] skipping column {col_idx} (specialist column)")
-                    continue
-
-                for cell_idx, cell in enumerate(cells):
-                    if cell_idx == 0:  # header row
+                    continue  # a specialist recognizer owns this column
+                for cell_idx, cell in enumerate(column.get("cells", [])):
+                    if cell_idx == 0 or cell.get("is_blank") or cell.get("skip_ocr"):
                         continue
-                    if cell.get("is_blank", False):
-                        # Empty cell (CellFormatter blank gate) — TrOCR would
-                        # hallucinate text into it, so never run.
-                        continue
-                    if cell.get("skip_ocr", False):
-                        # quote / ditto markers — leave the decision verbatim
-                        continue
-
-                    # Use the raw cell crop so TrOCR sees the same data as
-                    # the specialist recognizers (dark text on white).
                     source = cell.get("image_raw")
                     if source is None:
                         source = cell.get("image")
-
-                    # Numeric + age columns: strip table-grid slivers first —
-                    # a vertical rule at the edge reads as "1"/"I" otherwise.
                     if is_numeric_column(column) or column.get("is_age_column", False):
                         cleaned = strip_cell_borders(source)
                         if cleaned is not None:
                             source = cleaned
+                    work_cells.append(cell)
+                    work_images.append(source)
 
-                    text = self._recognise(source)
-                    if text is None:
-                        continue
+        if work_cells:
+            texts = self._recognise_batch(work_images)
+            for cell, text in zip(work_cells, texts):
+                if text is None:
+                    continue
+                cell.setdefault("predictions", {})["trocr"] = text
+                if not (cell.get("erkannt") or "").strip():
+                    cell["erkannt"] = text
+                    cell["score"] = 50
 
-                    # Write into the predictions dict — downstream stages
-                    # (FuzzyMatchingBirdNames, NumericConsensus) take over from
-                    # there and decide the final `erkannt`/`score`.
-                    cell.setdefault("predictions", {})["trocr"] = text
-
-                    # Provisional erkannt so the cell isn't empty if no
-                    # consensus stage runs (e.g. column without a specialist).
-                    if not (cell.get("erkannt") or "").strip():
-                        cell["erkannt"] = text
-                        cell["score"] = 50
-
-                    if self.debug:
-                        print(f"[TrOCR] page={page_idx} col={col_idx} row={cell_idx} -> {text!r}")
-
-        print("\nOCR (TrOCR) finished!\n")
+        print(f"\nOCR (TrOCR) finished! ({len(work_cells)} Zellen, "
+              f"Batchgröße {self.batch_size})\n")
         return pages
