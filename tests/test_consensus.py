@@ -326,3 +326,21 @@ def test_species_ditto_mark_left_alone(fuzzy):
     cell["skip_ocr"] = True
     fuzzy.process({"trocr": pages}, {})
     assert cell["erkannt"] == '"', "Ditto mark should be preserved"
+
+
+def test_digit_count_prior_rejects_overlong_reading():
+    """Aile is 2-3 digits; '7711' (bleed) must lose to the 2-digit alt."""
+    column = _numeric_column(
+        {"digit": "7711", "yolo": "7711", "trocr": "74"}, flag="is_alle_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["74"]
+
+
+def test_poids_decimal_survives_digit_count():
+    """Poids '11.5' has 2 integer digits — within [1,2], must stay."""
+    column = _numeric_column(
+        {"digit": "115", "yolo": "115", "trocr": "11.5"}, flag="is_poids_column"
+    )
+    erk, scores = _run_numeric_consensus(column)
+    assert erk == ["11.5"]

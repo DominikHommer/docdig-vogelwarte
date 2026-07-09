@@ -46,6 +46,26 @@ def _value_ranges_by_flag() -> dict:
     return ranges
 
 
+def _digit_counts_by_flag() -> dict:
+    """{is_*_column flag: (min_intdigits, max_intdigits)} from the schema."""
+    counts = {}
+    try:
+        for col in load_schema().get("columns", []):
+            dc = col.get("digit_count")
+            flag = ROLE_TO_FLAG.get(col.get("role"))
+            if dc and flag:
+                counts[flag] = (int(dc[0]), int(dc[1]))
+    except Exception:
+        pass
+    return counts
+
+
+def _int_digits(value: str) -> int:
+    """Number of digits before the decimal point."""
+    intpart = value.split(".")[0]
+    return sum(1 for c in intpart if c.isdigit())
+
+
 _NUMERIC_RE = re.compile(r"-?\d+(?:[.,]\d+)?")
 
 
@@ -111,6 +131,7 @@ class NumericConsensus(Module):
         super().__init__("numeric-consensus")
         self.debug = debug
         self._value_ranges = _value_ranges_by_flag()
+        self._digit_counts = _digit_counts_by_flag()
 
     def get_preconditions(self) -> List[str]:
         # Whatever ran last in the recognizer chain will do — we read every
@@ -225,19 +246,31 @@ class NumericConsensus(Module):
         but an alternative fits, the alternative wins (winner kept as
         alternative); if nothing fits, the value stays but is flagged red.
         """
-        value_range = None
-        for flag, vr in self._value_ranges.items():
-            if column.get(flag, False):
-                value_range = vr
-                break
-        if value_range is None or not erkannt:
+        value_range = next(
+            (vr for flag, vr in self._value_ranges.items() if column.get(flag)), None
+        )
+        digit_count = next(
+            (dc for flag, dc in self._digit_counts.items() if column.get(flag)), None
+        )
+        if (value_range is None and digit_count is None) or not erkannt:
             return erkannt, score, alternatives
 
-        if self._in_range(erkannt, value_range):
+        def plausible(value: str) -> bool:
+            if value_range is not None and not self._in_range(value, value_range):
+                return False
+            if digit_count is not None:
+                n = _int_digits(value)
+                if not (digit_count[0] <= n <= digit_count[1]):
+                    return False
+            return True
+
+        if plausible(erkannt):
             return erkannt, score, alternatives
 
+        # Winner implausible: prefer an alternative that fits, else keep the
+        # winner but flag it red for the user.
         for alt in alternatives:
-            if self._in_range(alt, value_range):
+            if plausible(alt):
                 rest = [a for a in alternatives if a != alt]
                 return alt, self.DISAGREE_SCORE, rest + [erkannt]
 

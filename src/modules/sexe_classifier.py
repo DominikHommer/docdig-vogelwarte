@@ -155,12 +155,19 @@ class SexeClassifier(Module):
         prepared = np.expand_dims(prepared, axis=-1)
         return np.expand_dims(prepared, axis=0)
 
+    # The model was trained on m/none/w (German Männchen/Weibchen), but the
+    # French forms record femelle as "f". Map the model's output onto the
+    # notation the banders actually wrote — measured on the corpus, "w" and
+    # "f" mean the same cell (that mismatch alone cost ~15 sexe points).
+    LABEL_ALIASES = {"w": "f", "m": "m", "none": ""}
+
     def _label_for(self, preds: np.ndarray):
         idx = int(np.argmax(preds))
         score = float(np.max(preds))
         if idx >= len(self.classes):
             return None, score
-        return self.classes[idx], score
+        raw = self.classes[idx]
+        return self.LABEL_ALIASES.get(raw, raw), score
 
     # ------------------------------------------------------------------
     def process(self, data: dict, config: dict) -> List[dict]:
@@ -224,9 +231,9 @@ class SexeClassifier(Module):
                             print(f"[SexeClassifier] low confidence ({score:.2f}) -> {label!r}")
                         continue
 
-                    # "none" == the bander left the cell empty; show it blank.
+                    # Empty (mapped from "none") -> leave blank.
                     cell.setdefault("predictions", {})["sexe_cnn"] = label
-                    cell["erkannt"] = "" if label == "none" else label
+                    cell["erkannt"] = label
                     cell["score"] = int(round(score * 100))
                     cell["skip_ocr"] = True
 

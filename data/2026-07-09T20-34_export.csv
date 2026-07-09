@@ -1,0 +1,217 @@
+﻿#,Spalte,Tesseract/CRNN,YOLO,TrOCR,HTR-VT,Final,Score
+1,Age,,,End .,,Fnd,66
+2,Age,,,Ind .,,Fnd,66
+3,Age,,,78 .,,,-1
+4,Age,,,IS .,,Fd,45
+5,Age,,,IS .,,Fd,45
+6,Age,,,IS .,,Fd,45
+7,Age,,,TO .,,Fd,45
+8,Age,,,_ Fus .,,Fnd,45
+9,Age,,,IS .,,Fd,45
+10,Age,,,_F8,,Fd,45
+11,Age,,,TS.,,Fd,45
+12,Age,,,75,,,-1
+13,Age,,,IS,,Fd,45
+14,Age,,,- 18 ..,,,-1
+15,Age,,,_ Id,,Fd,45
+16,Age,,,To,,Fd,45
+17,Age,,,Fd,,Fd,100
+18,Age,,,_ Id,,Fd,45
+19,Age,,,Tud,,Fnd,45
+20,Age,,,_ Tud .,,Fnd,45
+21,Age,,,Tud,,Fnd,45
+22,Age,,,Ind,,Fnd,66
+23,Age,,,- Fd,,Fd,100
+24,Age,,,_Ind,,Fnd,66
+25,Age,,,Fad,,Fd,80
+26,Age,,,_ Tel .,,Fd,45
+27,Age,,,- Fol,,Fd,45
+28,Age,,,F,,Fd,66
+29,Age,,,Fol,,Fd,45
+30,Age,,,Fd,,Fd,100
+31,Age,,,_ End .,,Fnd,66
+32,Age,,,Ed,,Fd,45
+33,Age,,,Fd,,Fd,100
+34,Age,,,FV,,Fd,45
+35,Age,,,Fd,,Fd,100
+36,Age,,,Fd,,Fd,100
+37,Age,,,I'd,,Fd,45
+38,Age,,,Ed,,Fd,45
+39,Age,,,Fd,,Fd,100
+40,Age,,,Fid,,Fd,80
+41,Age,,,Ed,,Fd,45
+42,Age,,,IA,,Fd,45
+43,Age,,,_Fd,,Fd,100
+44,Age,,,FAL,,Fd,45
+45,Age,,,Find,,Fnd,85
+46,Age,,,Fd,,Fd,100
+47,Age,,,Fd,,Fd,100
+48,Age,,,Fol,,Fd,45
+49,Age,,,Fd,,Fd,100
+50,Age,,,Ed,,Fd,45
+1,Aile,,71,75,,71,60
+2,Aile,42,725,72 _.,,42,60
+3,Aile,,17,67,,17,60
+4,Aile,0,0,80,,0,90
+5,Aile,,785,7 8,,785,60
+6,Aile,24,79,79,,79,90
+7,Aile,,72,75 .,,72,60
+8,Aile,,71,71,,71,100
+9,Aile,,75,75,,75,100
+10,Aile,7,7,87,,7,90
+11,Aile,2,74,74,,74,90
+12,Aile,,72,72 .,,72,100
+13,Aile,,62,65,,62,60
+14,Aile,05,0127,$0.5 ..,,5,60
+15,Aile,0,82,82,,82,90
+16,Aile,6,69,69 .,,69,90
+17,Aile,,822,82,,822,60
+18,Aile,49,707,99,,49,60
+19,Aile,,70,70,,70,100
+20,Aile,6,1507,69,,6,60
+21,Aile,841,87,891,,841,60
+22,Aile,,77,75,,77,60
+23,Aile,9,77,91,,9,60
+24,Aile,94,87,81,,94,60
+25,Aile,,74,94,,74,60
+26,Aile,2,75,73,,2,60
+27,Aile,,79,79,,79,100
+28,Aile,,77,#,,77,55
+29,Aile,,41,4 %,,41,60
+30,Aile,43,13,63,,43,60
+31,Aile,0,47,4 4 .,,0,60
+32,Aile,5,625,"62,5",,5,60
+33,Aile,8,1,87,,8,60
+34,Aile,,248,48,,248,60
+35,Aile,44,42,42,,42,90
+36,Aile,64,62,65,,64,60
+37,Aile,72,72,72,,72,100
+38,Aile,64,69,69,,69,90
+39,Aile,,1,to,,1,55
+40,Aile,14,42,42,,42,90
+41,Aile,3,12,13,,3,60
+42,Aile,,71,. 91,,71,60
+43,Aile,,71,71,,71,100
+44,Aile,,77,47,,77,60
+45,Aile,14,17,YY,,14,60
+46,Aile,,88,81,,88,60
+47,Aile,8,8,88,,8,90
+48,Aile,1,47,4 4,,1,60
+49,Aile,,48,48 .,,48,100
+50,Aile,,47,_44,,47,60
+1,Espèce,,,TZitorereis,Zitronenzeisig,Zitronenzeisig,97
+2,Espèce,,,Bochenclinic,Birkenzeisig,Birkenzeisig,90
+3,Espèce,,,I thinkmelle I,Heckenbraunelle,Heckenbraunelle,90
+4,Espèce,,,12 homenreis,Zitronenzeisig,Zitronenzeisig,88
+5,Espèce,,,LAMEL,"""","""",70
+6,Espèce,,,-,"""","""",70
+7,Espèce,,,-,"""","""",70
+8,Espèce,,,I Didemresik,Birkenzeisig,Birkenzeisig,90
+9,Espèce,,,L,"""","""",70
+10,Espèce,,,Haus stel,Hausrötel,Hausrötel,100
+11,Espèce,,,I Phyll Waldlanbar,Taueegoldhnänpe,Trauerschnäpper,52
+12,Espèce,,,I Rotholelli,Rotkehlchen,Rotkelchen,85
+13,Espèce,,,Borlasand,Bergäper,Trauerschnäpper,46
+14,Espèce,,,12 bnew zes i ],Zitronenzeisig,Zitronenzeisig,82
+15,Espèce,,,-,"""","""",70
+16,Espèce,,,Heckenbrownelle,Heckenbraunelle,Heckenbraunelle,100
+17,Espèce,,,Zitronenzeisig. ],Zitronenzeisig,Zitronenzeisig,100
+18,Espèce,,,- - -,"""","""",70
+19,Espèce,,,Birken zeisig,Birkenzeisig,Birkenzeisig,100
+20,Espèce,,,Hecker brouwhelle,Heckenbraunelle,Heckenbraunelle,100
+21,Espèce,,,Zitronen zeisig,Zitronenzeisig,Zitronenzeisig,100
+22,Espèce,,,I'm J,"""","""",70
+23,Espèce,,,Erlenzeisig,Erlenzeisig,Erlenzeisig,100
+24,Espèce,,,Hanything,Hänfling,Hänfling,98
+25,Espèce,,,Erlen Jeeisig,Erlenzeisig,Erlenzeisig,100
+26,Espèce,,,I Birkeu zersin,Birkenzeisig,Birkenzeisig,98
+27,Espèce,,,Zitrouen 20:5 /s,Zitronenzeisig,Zitronenzeisig,90
+28,Espèce,,,- - -,"""","""",70
+29,Espèce,,,Ditellwith,Duchfink,Distelfink,72
+30,Espèce,,,Tannemark,Hänig,Hänfling,70
+31,Espèce,,,Litronenvenie,Zitrönenzeisig,Zitronenzeisig,96
+32,Espèce,,,Tommandie,Baunenmeieg,Tannenmeise,76
+33,Espèce,,,Hochen brawnelle,Henoneet,Heckenbraunelle,79
+34,Espèce,,,Libonenocinie,Birksenzeisig,Birkenzeisig,86
+35,Espèce,,,Exleading,Birkenziig,Birkenzeisig,80
+36,Espèce,,,I'llhe borelled,Helnranele,Heckenbraunelle,74
+37,Espèce,,,-,"""","""",70
+38,Espèce,,,IAM,"""","""",70
+39,Espèce,,,-,"""""","""""",20
+40,Espèce,,,LAM,"""","""",70
+41,Espèce,,,Tammermeine,Tannenmeisr,Tannenmeise,91
+42,Espèce,,,+ Herhen bundle,Heckenbraunelle,Heckenbraunelle,95
+43,Espèce,,,-,"""","""",70
+44,Espèce,,,Corduelis C'Gruille,Hurchge trichen,Hausrotschwanz,38
+45,Espèce,,,Distellich,Buchfink,Distelfink,60
+46,Espèce,,,Lifranen eine,Zihenzeiig,Zitronenzeisig,65
+47,Espèce,,,Hausrochbien,B́sangefink,Hausrotschwanz,59
+48,Espèce,,,Liltomenschie,Zitsanenmeisg,Zitronenzeisig,77
+49,Espèce,,,-,nn,Hänfling,31
+50,Espèce,,,L,"""","""",70
+1,Heure,,228,. 930,,228,60
+2,Heure,6,10,to,,6,60
+9,Heure,,1,11,,1,60
+10,Heure,0,019,2020,,0,60
+11,Heure,30,110,430,,30,60
+14,Heure,30,2,630,,30,60
+21,Heure,7,700,700,,700,90
+23,Heure,,80,8.0,,8.0,100
+29,Heure,,70,900,,70,60
+36,Heure,,17,10 .,,17,60
+37,Heure,,,1.,,1,50
+44,Heure,,1120,11.30.,,11.30,60
+49,Heure,,,-,,-,50
+50,Heure,,,-,,-,50
+1,Jour/Mois,,25725,23.7.,,23.7,60
+11,Jour/Mois,244,247,24 . 7 .,,24.7,90
+50,Jour/Mois,,,-,,-,50
+1,Poids,12,122,12 .,,12,90
+2,Poids,,412,95,,412,60
+3,Poids,2,18,&,,2,60
+4,Poids,,15,13,,15,60
+5,Poids,,11,11.5,,11,60
+6,Poids,,417,AL,,417,55
+7,Poids,,1,11.5,,1,60
+8,Poids,105,1015,10.5,,105,60
+9,Poids,0,17,10,,0,60
+10,Poids,,171,17.5,,171,60
+11,Poids,,2,9,,2,60
+12,Poids,6,16,16,,16,90
+13,Poids,,712,"7 , 5",,712,60
+14,Poids,1,1117,12.5,,1,60
+15,Poids,,13,13,,13,100
+16,Poids,3,17,17,,17,90
+17,Poids,,122,13 .,,122,60
+18,Poids,2,1215,"12,5",,2,60
+19,Poids,25,1215,125,,25,60
+20,Poids,,1715,"17,5",,17.5,60
+22,Poids,,12,13 .,,12,60
+23,Poids,,17,12,,17,60
+24,Poids,18,185,"18,5",,18,60
+25,Poids,,17,12,,17,60
+26,Poids,,1017,"10,5",,10.5,60
+27,Poids,2,122,12,,2,60
+28,Poids,,11111,12,,12,60
+29,Poids,,14,14,,14,100
+30,Poids,95,95,95,,95,100
+31,Poids,4,125,135,,4,60
+32,Poids,95,95,95,,95,100
+33,Poids,,115,15 .,,115,60
+34,Poids,,13,13,,13,100
+35,Poids,,127,125,,127,60
+36,Poids,90,710,20,,90,60
+37,Poids,,171,12.5 .,,171,60
+38,Poids,,14,19 ..,,14,60
+39,Poids,,18,AR,,18,55
+40,Poids,9,14,19,,9,60
+41,Poids,,8,8,,8,100
+42,Poids,19,12,19,,19,90
+43,Poids,,188,18,,188,60
+44,Poids,3,12,13,,3,60
+45,Poids,,15,15,,15,100
+46,Poids,1,12,13 .,,1,60
+47,Poids,05,165,16.5,,5,60
+48,Poids,,5115,11's,,11,60
+49,Poids,,212,125,,212,60
+50,Poids,,15,125.,,15,60

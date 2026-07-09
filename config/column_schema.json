@@ -8,7 +8,8 @@
     "width_share: erwarteter Anteil der Spaltenbreite an der Gesamtbreite [min, max].",
     "models: dokumentiert, welche Erkenner diese Rolle verarbeiten (Dispatch",
     "laeuft ueber die is_*-Flags, siehe src/libs/columns.py).",
-    "value_range: plausibler Zahlenbereich (Aile in mm, Poids in g) - Werte ausserhalb werden im Konsens abgewertet/markiert."
+    "value_range: plausibler Zahlenbereich (Aile in mm, Poids in g) - Werte ausserhalb werden im Konsens abgewertet/markiert.",
+    "digit_count: erwartete Anzahl VORKOMMA-Ziffern [min,max] - laengere Lesungen (Nachbar-Bleed) werden abgewertet."
   ],
   "form": "Liste de baguement (A)",
   "columns": [
@@ -143,6 +144,10 @@
       "value_range": [
         25,
         140
+      ],
+      "digit_count": [
+        2,
+        3
       ]
     },
     {
@@ -165,6 +170,10 @@
       "value_range": [
         3,
         80
+      ],
+      "digit_count": [
+        1,
+        2
       ]
     }
   ],
