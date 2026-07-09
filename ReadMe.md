@@ -95,6 +95,28 @@ All recognizers dispatch on the semantic flags set by `DetectColumns`
 or reordering columns in the source documents does not require code changes.
 The flags and their labels live in one place: `src/libs/columns.py`.
 
+### Spalten vordefinieren (column schema)
+
+`DetectColumns` does NOT guess columns independently anymore. The expected
+form layout is predefined in **`config/column_schema.json`** (order, header
+keywords, expected width shares, and — documentation — which models consume
+each role). Assignment works as a monotone sequence alignment
+(`src/libs/column_schema.py`):
+
+- header OCR is fuzzy-matched per role (word-based, misreads like "Alle" or
+  "d'Sexe ®" hit; short junk fragments like "No" carry no evidence — the old
+  substring matching made such fragments claim the Bague role anywhere),
+- columns whose header OCR fails are carried by their position between
+  confidently matched anchors plus their width prior,
+- the printed order is ENFORCED: a later column can never take an earlier
+  role, each role is assigned at most once.
+
+To adapt to a different form: edit `config/column_schema.json` (add/remove
+roles, adjust keywords/widths) — no code changes needed. Regression net:
+`tests/test_column_schema.py` (incl. the measured real-page layout) and
+`tests/test_column_assignment_integration.py` (real scans + files-3 ground
+truth order).
+
 The Streamlit UI shows **every extracted column**: semantically tagged ones
 (Bague, Espèce, Sexe, Age, Jour/Mois, Heure, Aile, Poids) with their form
 label, anything the detector could not classify as "Spalte N".
